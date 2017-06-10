@@ -2,18 +2,12 @@
 
 #https://websockets.readthedocs.io/en/stable/intro.html
 
-import tensorflow as tf
 import asyncio
 import websockets
 import json
 from quadrotor2d import Quadrotor2D
-from associations import Associations
 
 model = Quadrotor2D ()
-sess = model.sess
-associations = Associations (sess, model.graph)
-assoc_train_op = associations.get_train_op (model.q_next_states)
-sess.run(tf.global_variables_initializer())
 
 async def agent_connection(websocket, path):
     while websocket.open:

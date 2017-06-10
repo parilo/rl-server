@@ -14,6 +14,7 @@ class Quadrotor2D ():
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
 
+        self.graph = tf.get_default_graph ()
         self.sess = tf.Session(config=config)
         journalist = tf.summary.FileWriter("logs")
 
@@ -92,10 +93,8 @@ class Quadrotor2D ():
             next_observation_mask = tf.ones((batch_size,), tf.float32)
         )
 
-        self.sess.run(tf.global_variables_initializer())
-
         journalist.add_graph(self.sess.graph)
-        self.sess.run(init_all_vars_op)
+        self.sess.run(tf.global_variables_initializer())
 
         self.sum_rewards = 0
 
