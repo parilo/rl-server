@@ -1,291 +1,228 @@
-# code adopted from
-# https://codesachin.wordpress.com/2015/11/28/self-organizing-maps-with-googles-tensorflow/
+# code taken from
+# https://github.com/spiglerg/Kohonen_SOM_Tensorflow
 
 import tensorflow as tf
 import numpy as np
+import cv2
+from functools import reduce
 
-class SOM(object):
-    """
-    2-D Self-Organizing Map with Gaussian Neighbourhood function
-    and linearly decreasing learning rate.
-    """
+class SOM:
+	"""
+	Efficient implementation of Kohonen Self-Organizing maps using Tensorflow.
 
-    #To check if the SOM has been trained
-    _trained = False
+	map_size_n: size of the (square) map
+	num_expected_iterations: number of iterations to be used during training. This parameter is used to derive good parameters for the learning rate and the neighborhood radius.
+	"""
+	def __init__(
+		self,
+		input_shape,
+		map_size_n,
+		num_expected_iterations,
+		session,
+		input_batch = None,
+		alpha_learning_rate = 0.05, # strength of changes
+		sigma_learning_rate = 0.15  # near clusters area
+	):
+		input_shape = tuple([i for i in input_shape if i is not None])
 
-    def __init__(self, m, n, dim, n_iterations=100, alpha=None, sigma=None, graph=tf.Graph(), sess=tf.Session()):
-        """
-        Initializes all necessary components of the TensorFlow
-        Graph.
+		self.input_shape = input_shape
+		self.sigma_act = tf.constant( 2.0*(reduce(lambda x, y:x*y, self.input_shape, 1)*0.05)**2, dtype=tf.float32 )
 
-        m X n are the dimensions of the SOM. 'n_iterations' should
-        should be an integer denoting the number of iterations undergone
-        while training.
-        'dim' is the dimensionality of the training inputs.
-        'alpha' is a number denoting the initial time(iteration no)-based
-        learning rate. Default value is 0.3
-        'sigma' is the the initial neighbourhood value, denoting
-        the radius of influence of the BMU while training. By default, its
-        taken to be half of max(m, n).
-        """
+		self.n = map_size_n
 
-        #Assign required variables first
-        self._m = m
-        self._n = n
-        self.dim = dim
-        if alpha is None:
-            alpha = 0.3
-        else:
-            alpha = float(alpha)
-        if sigma is None:
-            sigma = max(m, n) / 2.0
-        else:
-            sigma = float(sigma)
-        self._n_iterations = abs(int(n_iterations))
+		self.session = session
 
-        ##INITIALIZE GRAPH
-        self._graph = graph
+		self.alpha = tf.constant( 0.5 )
+		self.alpha_learning_rate = tf.constant(alpha_learning_rate)
+		# self.timeconst_alpha = tf.constant( 2.0*num_expected_iterations/6.0) #2/6
 
-        ##INITIALIZE SESSION
-        self._sess = sess
+		self.sigma = tf.constant( self.n/2.0 ) #self.n/2.0
+		self.sigma_learning_rate = tf.constant(sigma_learning_rate)
+		# self.timeconst_sigma = tf.constant( 2.0*num_expected_iterations/5.0 ) #2/5
 
-    def create_model (self, batch):
 
-        ##POPULATE GRAPH WITH NECESSARY COMPONENTS
-        with self._graph.as_default():
+		self.num_iterations = 0
+		self.num_expected_iterations = num_expected_iterations
 
-            m = self._m
-            n = self._n
-            dim = self.dim
 
-            ##VARIABLES AND CONSTANT OPS FOR DATA STORAGE
+		# Pre-initialize neighborhood function's data for efficiency
+		self.row_indices = np.zeros((self.n, self.n))
+		self.col_indices = np.zeros((self.n, self.n))
+		for r in range(self.n):
+			for c in range(self.n):
+				self.row_indices[r, c] = r
+				self.col_indices[r, c] = c
 
-            #Randomly initialized weightage vectors for all neurons,
-            #stored together as a matrix Variable of size [m*n, dim]
-            self._weightage_vects = tf.Variable(tf.random_normal(
-                [self._m * self._n, self.dim]))
+		self.row_indices = np.reshape(self.row_indices, [-1])
+		self.col_indices = np.reshape(self.col_indices, [-1])
 
-            #Matrix of size [m*n, 2] for SOM grid locations
-            #of neurons
-            self._location_vects = tf.constant(np.array(
-                list(self._neuron_locations(m, n))))
+		## Compute d^2/2 for each pair of units, so that the neighborhood function can be computed as exp(-dist/sigma^2)
+		self.dist = np.zeros((self.n*self.n, self.n*self.n))
+		for i in range(self.n*self.n):
+			for j in range(self.n*self.n):
+				self.dist[i, j] = ( (self.row_indices[i]-self.row_indices[j])**2 + (self.col_indices[i]-self.col_indices[j])**2 )
 
-            ##PLACEHOLDERS FOR TRAINING INPUTS
-            #We need to assign them as attributes to self, since they
-            #will be fed in during training
 
-            #The training vector
-            self._vect_input = batch
-            # self._vect_input = tf.placeholder("float", [dim])
-            #Iteration number
-            # self._iter_input = tf.placeholder("float")
+		self.initialize_graph(input_batch)
 
-            ##CONSTRUCT TRAINING OP PIECE BY PIECE
-            #Only the final, 'root' training op needs to be assigned as
-            #an attribute to self, since all the rest will be executed
-            #automatically during training
 
-            #To compute the Best Matching Unit given a vector
-            #Basically calculates the Euclidean distance between every
-            #neuron's weightage vector and the input, and returns the
-            #index of the neuron which gives the least value
-            bmu_index = tf.argmin(tf.sqrt(tf.reduce_sum(
-                tf.pow(
-                    tf.subtract(
-                        tf.reshape(
-                            tf.tile(
-                                self._vect_input,
-                                [m*n, 1]
-                            ),
-                            [-1, m*n, dim]
-                        ),
-                        self._weightage_vects,
-                        # tf.stack(
-                        #     [self._vect_input for i in range(m*n)]
-                        # )
-                    ),
-                    2
-                ),
-                1
-            )),0)
+	def initialize_graph(self, input_batch):
+		self.weights = tf.Variable( tf.random_uniform((self.n*self.n, )+self.input_shape, 0.0, 1.0) )  ##TODO: match with input type, and check that my DQN implementation actually uses values in 0-255 vs 0-1?
 
-            tmp = tf.reshape(
-                tf.tile(
-                    self._vect_input,
-                    [1, m*n]
-                ),
-                [-1, m*n, dim]
-            )
 
-            print ('bmu_index')
-            print (tmp.get_shape())
-            # print (bmu_index.get_shape())
+		# 1) The first part computes the winning unit, potentially in batch mode. It only requires 'input_placeholder_' and 'current_iteration' to be filled in. This is used in get_batch_winner and get_batch_winner_activity, to be used in clustering novel vectors after training is complete.
+		# The batch placeholder is not used in training, where only a single vector is supported at the moment.
 
-            #This will extract the location of the BMU based on the BMU's
-            #index
-            slice_input = tf.pad(
-                tf.reshape(bmu_index, [1]),
-                np.array([[0, 1]])
-            )
-            bmu_loc = tf.reshape(
-                tf.slice(
-                    self._location_vects,
-                    slice_input,
-                    tf.constant(np.array([1, 2]))
-                ),
-                [2]
-            )
+		self.input_placeholder = tf.placeholder(tf.float32, (None,)+self.input_shape) if input_batch is None else input_batch
+		# self.current_iteration = tf.placeholder(tf.float32)
 
-            #To compute the alpha and sigma values based on iteration
-            #number
-            # learning_rate_op = tf.subtract(
-            #     1.0,
-            #     tf.div(
-            #         self._iter_input,
-            #         self._n_iterations
-            #     )
-            # )
-            learning_rate_op = tf.constant (0.2)
+		## Compute the current iteration's neighborhood sigma and learning rate alpha:
+		self.sigma_tmp = self.sigma * self.sigma_learning_rate #tf.exp( - self.current_iteration/self.timeconst_sigma  )
+		self.sigma2 = 2.0*tf.multiply(self.sigma_tmp, self.sigma_tmp)
 
-            _alpha_op = tf.multiply(alpha, learning_rate_op)
-            _sigma_op = tf.multiply(sigma, learning_rate_op)
+		self.alpha_tmp = self.alpha * self.alpha_learning_rate #tf.exp( - self.current_iteration/self.timeconst_alpha  )
 
-            #Construct the op that will generate a vector with learning
-            #rates for all neurons, based on iteration number and location
-            #wrt BMU.
-            bmu_distance_squares = tf.reduce_sum(
-                tf.pow(
-                    tf.subtract(
-                        self._location_vects,
-                        tf.stack(
-                            [bmu_loc for i in range(m*n)]
-                        )
-                    ),
-                    2
-                ),
-                1
-            )
 
-            neighbourhood_func = tf.exp(
-                tf.negative(
-                    tf.div(
-                        tf.cast(bmu_distance_squares, "float32"),
-                        tf.pow(_sigma_op, 2)
-                    )
-                )
-            )
+		self.input_placeholder_ = tf.expand_dims(self.input_placeholder, 1)
+		self.input_placeholder_ = tf.tile(self.input_placeholder_, (1,self.n*self.n,1) )
 
-            learning_rate_op = tf.multiply(_alpha_op, neighbourhood_func)
+		self.diff = self.input_placeholder_ - self.weights
+		self.diff_sq = tf.square(self.diff)
+		self.diff_sum = tf.reduce_sum( self.diff_sq, reduction_indices=list(range(2, 2+len(self.input_shape))) )
 
-            #Finally, the op that will use learning_rate_op to update
-            #the weightage vectors of all neurons based on a particular
-            #input
-            learning_rate_multiplier = tf.stack(
-                [tf.tile(
-                    tf.slice(
-                        learning_rate_op,
-                        np.array([i]),
-                        np.array([1])
-                    ),
-                    [dim]
-                ) for i in range(m*n)]
-            )
+		# Get the index of the best matching unit
+		self.bmu_index = tf.argmin(self.diff_sum, 1)
 
-            weightage_delta = tf.multiply(
-                learning_rate_multiplier,
-                tf.subtract(
-                    tf.stack([self._vect_input for i in range(m*n)]),
-                    self._weightage_vects
-                )
-            )
+		self.bmu_dist = tf.reduce_min(self.diff_sum, 1)
+		self.bmu_activity = tf.exp( -self.bmu_dist/self.sigma_act )
 
-            new_weightages_op = tf.add(
-                self._weightage_vects,
-                weightage_delta
-            )
 
-            self._training_op = tf.assign(
-                self._weightage_vects,
-                new_weightages_op
-            )
+		self.diff = tf.squeeze(self.diff)
 
-            ##INITIALIZE VARIABLES
-            # init_op = tf.global_variables_initializer()
-            # self._sess.run(init_op)
 
-    def get_train_op (self):
-        return self._training_op
 
-    def _neuron_locations(self, m, n):
-        """
-        Yields one by one the 2-D locations of the individual neurons
-        in the SOM.
-        """
-        #Nested iterations over both dimensions
-        #to generate all 2-D locations in the map
-        for i in range(m):
-            for j in range(n):
-                yield np.array([i, j])
+		## 2) The second part computes and applies the weight update. It requires 'diff_2' and 'dist_sliced' to be filled in. dist_sliced = self.dist[bmu_index, :]
+		self.dist_tensor = tf.constant (self.dist, dtype=tf.float32)
+		self.diff_2 = self.diff #tf.placeholder(tf.float32, (None, self.n*self.n,)+self.input_shape)
+		self.dist_sliced = tf.gather_nd (self.dist_tensor, tf.expand_dims(self.bmu_index, -1)) #tf.placeholder(tf.float32, (None, self.n*self.n,))
+		# print ('dist_sliced')
+		# print (self.dist_sliced.get_shape())
 
-    def train(self, input_vects):
-        """
-        Trains the SOM.
-        'input_vects' should be an iterable of 1-D NumPy arrays with
-        dimensionality as provided during initialization of this SOM.
-        Current weightage vectors for all neurons(initially random) are
-        taken as starting conditions for training.
-        """
+		self.distances = tf.exp(-self.dist_sliced / self.sigma2 )
+		self.lr_times_neigh = tf.multiply( self.alpha_tmp, self.distances )
+		for i in range(len(self.input_shape)):
+			self.lr_times_neigh = tf.expand_dims(self.lr_times_neigh, -1)
+		self.lr_times_neigh = tf.tile(self.lr_times_neigh, (1,1,)+self.input_shape )
 
-        #Training iterations
-        for iter_no in range(self._n_iterations):
-            #Train with each vector one by one
-            for input_vect in input_vects:
-                self._sess.run(
-                    self._training_op,
-                    feed_dict={
-                        self._vect_input: input_vect,
-                        self._iter_input: iter_no
-                    }
-                )
+		self.delta_w = self.lr_times_neigh * self.diff_2
 
-        #Store a centroid grid for easy retrieval later on
-        centroid_grid = [[] for i in range(self._m)]
-        self._weightages = list(self._sess.run(self._weightage_vects))
-        self._locations = list(self._sess.run(self._location_vects))
-        for i, loc in enumerate(self._locations):
-            centroid_grid[loc[0]].append(self._weightages[i])
-        self._centroid_grid = centroid_grid
+		self.update_weights = tf.assign_add(self.weights, tf.reduce_sum(self.delta_w, axis=0))
 
-        self._trained = True
+	def get_train_op(self):
+		return self.update_weights
 
-    def get_centroids(self):
-        """
-        Returns a list of 'm' lists, with each inner list containing
-        the 'n' corresponding centroid locations as 1-D NumPy arrays.
-        """
-        if not self._trained:
-            raise ValueError("SOM not trained yet")
-        return self._centroid_grid
+	def get_centroids_op(self):
+		return self.weights
 
-    def map_vects(self, input_vects):
-        """
-        Maps each input vector to the relevant neuron in the SOM
-        grid.
-        'input_vects' should be an iterable of 1-D NumPy arrays with
-        dimensionality as provided during initialization of this SOM.
-        Returns a list of 1-D NumPy arrays containing (row, column)
-        info for each input vector(in the same order), corresponding
-        to mapped neuron.
-        """
+	def train(self, input_x): #TODO: try training a batch all together, to optimize gpu usage?
+		# Compute the winning unit
+		# bmu_index, diff = self.session.run([self.bmu_index, self.diff], {self.input_placeholder:input_x, self.current_iteration:self.num_iterations})
+		# print ('bmu_index')
+		# print (bmu_index.shape)
+		# print (bmu_index)
+		# print ('diff')
+		# print (diff.shape)
 
-        if not self._trained:
-            raise ValueError("SOM not trained yet")
+		# Update the network's weights
+		# ds = np.array([self.dist[bmu_index[i],:] for i in range(len(bmu_index))])
+		# print ('ds')
+		# print (ds.shape)
+		self.session.run(self.update_weights, {
+            self.input_placeholder:input_x #,
+            # self.diff_2:diff,
+            # self.dist_sliced:ds,
+            # self.current_iteration:self.num_iterations
+        })
 
-        to_return = []
-        for vect in input_vects:
-            min_index = min([i for i in range(len(self._weightages))],
-                            key=lambda x: np.linalg.norm(vect-
-                                                         self._weightages[x]))
-            to_return.append(self._locations[min_index])
+		self.num_iterations = min(self.num_iterations+1, self.num_expected_iterations)
 
-        return to_return
+
+	def get_batch_winner(self, batch_input):
+		"""
+		Returns the index of the units in the network that best match each batch_input vector.
+		"""
+		indices = self.session.run([self.bmu_index], {
+			self.input_placeholder:batch_input#,
+			# self.current_iteration:self.num_iterations
+		})
+
+		return indices
+
+
+	def get_batch_winner_activity(self, batch_input):
+		"""
+		Returns the activation value of the units in the network that best match each batch_input vector.
+		"""
+		activity = self.session.run([self.bmu_activity], {
+			self.input_placeholder:batch_input#,
+			# self.current_iteration:self.num_iterations
+		})
+
+		return activity
+
+
+	def get_weights(self):
+		"""
+		Returns the full list of weights as [N*N, input_shape]
+		"""
+		return self.weights.eval()
+
+
+
+
+if __name__ == "__main__":
+
+    ## EXAMPLE : Color clustering
+
+    with tf.device("gpu:0"):
+    	sess = tf.InteractiveSession()
+
+    	num_training = 5000
+    	s = SOM( (3,), 20, num_training, sess )
+
+    	sess.run(tf.initialize_all_variables())
+
+
+    	#For plotting the images
+    	from matplotlib import pyplot as plt
+
+    	#Training inputs for RGBcolors
+    	colors = np.array(
+    		 [[0., 0., 0.],
+    		  [0., 0., 1.],
+    		  [0., 0., 0.5],
+    		  [0.125, 0.529, 1.0],
+    		  [0.33, 0.4, 0.67],
+    		  [0.6, 0.5, 1.0],
+    		  [0., 1., 0.],
+    		  [1., 0., 0.],
+    		  [0., 1., 1.],
+    		  [1., 0., 1.],
+    		  [1., 1., 0.],
+    		  [1., 1., 1.],
+    		  [.33, .33, .33],
+    		  [.5, .5, .5],
+    		  [.66, .66, .66]])
+
+
+    	for i in range(num_training):
+            rnd_ind = np.random.randint(0, len(colors))
+
+            batch = np.random.uniform (0, 1, (16, 3))
+            # s.train(colors[rnd_ind,:])
+            # s.train(colors)
+            s.train(batch)
+            image_grid = np.reshape(s.get_weights(), [20, 20, 3])
+
+            cv2.imshow('image', cv2.resize(image_grid, (0, 0), fx=30, fy=30, interpolation=cv2.INTER_NEAREST))
+            cv2.waitKey (1)
