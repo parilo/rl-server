@@ -85,11 +85,9 @@ class SOM:
 
 		self.input_placeholder_ = tf.expand_dims(self.input_placeholder, 1)
 		self.input_placeholder_ = tf.tile(self.input_placeholder_, (1,self.n*self.n,1) )
-
 		self.diff = self.input_placeholder_ - self.weights
 		self.diff_sq = tf.square(self.diff)
 		self.diff_sum = tf.reduce_sum( self.diff_sq, reduction_indices=list(range(2, 2+len(self.input_shape))) )
-
 		# Get the index of the best matching unit
 		self.bmu_index = tf.argmin(self.diff_sum, 1)
 
@@ -117,6 +115,17 @@ class SOM:
 		self.delta_w = self.lr_times_neigh * self.diff_2
 
 		self.update_weights = tf.assign_add(self.weights, tf.reduce_sum(self.delta_w, axis=0))
+
+
+		# getting best matching unit for placeholder
+		self.input_placeholder2 = tf.placeholder(tf.float32, (None,)+self.input_shape)
+		self.input_placeholder2_ = tf.expand_dims(self.input_placeholder2, 1)
+		self.input_placeholder2_ = tf.tile(self.input_placeholder2_, (1,self.n*self.n,1) )
+		self.diff2 = self.input_placeholder2_ - self.weights
+		self.diff_sq2 = tf.square(self.diff2)
+		self.diff_sum2 = tf.reduce_sum( self.diff_sq2, reduction_indices=list(range(2, 2+len(self.input_shape))) )
+		# Get the index of the best matching unit
+		self.bmu_index2 = tf.argmin(self.diff_sum2, 1)
 
 	def get_train_op(self):
 		return self.update_weights
@@ -151,8 +160,8 @@ class SOM:
 		"""
 		Returns the index of the units in the network that best match each batch_input vector.
 		"""
-		indices = self.session.run([self.bmu_index], {
-			self.input_placeholder:batch_input#,
+		indices = self.session.run(self.bmu_index2, {
+			self.input_placeholder2:batch_input#,
 			# self.current_iteration:self.num_iterations
 		})
 

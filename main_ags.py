@@ -5,10 +5,13 @@
 import asyncio
 import websockets
 import json
+import numpy as np
 from rl_train_loop import RLTrainLoop
 from quadrotor2d_ddpg import Quadrotor2D
 from som.som_state_cluster import SOMStateCluster
 from som.som_act_cluster import SOMActCluster
+
+# AGS - associations graph search
 
 num_actions = 2;
 observation_size = 50;
@@ -41,8 +44,14 @@ async def agent_connection(websocket, path):
             action = quadrotor2d.act (req ['state'])
             await websocket.send(json.dumps(action))
         elif method == 'act_batch':
+
             actions = quadrotor2d.act_batch (req ['states'])
+
+            state_cluster.highlight (np.array(req ['states'][10]))
+            act_cluster.highlight (np.array(actions [10]))
+
             await websocket.send(json.dumps(actions))
+
         elif method == 'store_exp_batch':
             train_loop.store_exp_batch (
                 req ['rewards'],
