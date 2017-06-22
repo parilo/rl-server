@@ -10,6 +10,7 @@ from rl_train_loop import RLTrainLoop
 from quadrotor2d_ddpg import Quadrotor2D
 from som.som_state_cluster import SOMStateCluster
 from som.som_act_cluster import SOMActCluster
+from associations.associations_graph import AssociationsGraph
 
 # AGS - associations graph search
 
@@ -20,6 +21,7 @@ train_loop = RLTrainLoop (num_actions, observation_size)
 quadrotor2d = Quadrotor2D (train_loop)
 state_cluster = SOMStateCluster (train_loop)
 act_cluster = SOMActCluster (train_loop)
+assoc = AssociationsGraph (train_loop, state_cluster, act_cluster)
 
 train_loop.set_loss_op (quadrotor2d.get_loss_op ())
 train_loop.add_train_ops (quadrotor2d.get_train_ops ()) # 3 train ops
@@ -29,6 +31,7 @@ train_loop.add_train_ops (act_cluster.get_train_ops ()) # 2 train ops
 def train_listener ():
     state_cluster.process_train_outputs ()
     act_cluster.process_train_outputs ()
+    assoc.process_train_outputs ()
 
 train_loop.set_train_listener (train_listener)
 train_loop.init_vars ()

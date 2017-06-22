@@ -27,8 +27,14 @@ class SOMCluster ():
             samples_tensor
         )
 
+    def get_clusters_count (self):
+        return self.map_side_size * self.map_side_size
+
     def get_train_ops (self):
         return [self.som.get_train_op (), self.som.get_centroids_op ()]
+
+    def get_clusters (self, vectors):
+        return self.som.get_batch_winner (self.highlighted_vector)
 
     def show_centroids (self, image_grid):
         #normalization of centroids
