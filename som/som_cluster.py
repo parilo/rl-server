@@ -34,7 +34,7 @@ class SOMCluster ():
         return [self.som.get_train_op (), self.som.get_centroids_op ()]
 
     def get_clusters (self, vectors):
-        return self.som.get_batch_winner (self.highlighted_vector)
+        return self.som.get_batch_winner (vectors)
 
     def show_centroids (self, image_grid):
         #normalization of centroids

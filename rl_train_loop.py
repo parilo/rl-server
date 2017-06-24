@@ -122,7 +122,7 @@ class RLTrainLoop ():
 
                     i += 1
                     if i % 50 == 49:
-                        print ('trains: {} rewards: {} loss: {} stored: {}'.format(i, self.sum_rewards, loss, queue_size))
+                        # print ('trains: {} rewards: {} loss: {} stored: {}'.format(i, self.sum_rewards, loss, queue_size))
                         self.sum_rewards = 0
 
             except tf.errors.OutOfRangeError:
