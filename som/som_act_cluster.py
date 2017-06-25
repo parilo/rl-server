@@ -15,10 +15,13 @@ class SOMActCluster (SOMCluster):
 
     def process_train_outputs (self):
 
+        centroids = self.train_loop.train_outputs [12]
+        self._set_centroids (centroids)
+
         image_grid = np.concatenate(
             [
                 np.reshape(
-                    self.train_loop.train_outputs [12], # get cendroids op of this self organized map
+                    centroids, # get cendroids op of this self organized map
                     [self.map_side_size, self.map_side_size, self.input_dim]
                 ),
                 np.zeros((self.map_side_size, self.map_side_size, 1))

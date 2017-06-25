@@ -6,6 +6,7 @@ import asyncio
 import websockets
 import json
 import numpy as np
+import random
 from rl_train_loop import RLTrainLoop
 from quadrotor2d_ddpg import Quadrotor2D
 from som.som_state_cluster import SOMStateCluster
@@ -38,7 +39,16 @@ train_loop.init_vars ()
 
 async def agent_connection(websocket, path):
     while websocket.open:
-        req_json = await websocket.recv()
+        try:
+            req_json = await websocket.recv()
+        except websockets.exceptions.ConnectionClosed:
+            print ('-------------------------------')
+            print ('-------------------------------')
+            print ('closed')
+            print ('-------------------------------')
+            print ('-------------------------------')
+            train_loop.stop_train ()
+            return
         req = json.loads(req_json)
         # print (req)
 
@@ -48,7 +58,22 @@ async def agent_connection(websocket, path):
             await websocket.send(json.dumps(action))
         elif method == 'act_batch':
 
-            actions = quadrotor2d.act_batch (req ['states'])
+            # if random.random () > 0.5:
+            actions_assoc = assoc.control (req ['states'])
+            # else:
+            actions_ddpg = quadrotor2d.act_batch (req ['states'])
+
+            actions = None
+            if (actions_assoc is None):
+                actions = actions_ddpg
+            else:
+                actions = 0.5 * np.array(actions_assoc) + 0.5 * np.array(actions_ddpg)
+                actions = actions.tolist ()
+                # actions = quadrotor2d.act_batch (req ['states'])
+                # print ('------ nn')
+                # print (actions)
+            # else:
+            #     print (actions)
 
             state_cluster.highlight (np.array(req ['states'][10]))
             act_cluster.highlight (np.array(actions [10]))

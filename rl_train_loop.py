@@ -18,7 +18,7 @@ class RLTrainLoop ():
         self.logger = tf.summary.FileWriter("logs")
 
         batch_size = 128
-        self.max_experience_size = 3000000
+        self.max_experience_size = 1000000
         self.start_learning_after = 500 # 20000
 
         self.inp_rewards = tf.placeholder (tf.float32, (None,))
@@ -82,6 +82,9 @@ class RLTrainLoop ():
     def set_train_listener (self, listener):
         self.train_listener = listener
 
+    def stop_train (self):
+        self.coord.request_stop()
+
     def train (self):
 
         self.coord = tf.train.Coordinator()
@@ -90,7 +93,7 @@ class RLTrainLoop ():
         def TrainLoop(coord):
             try:
                 i = 0
-                while not coord.should_stop():
+                while not self.coord.should_stop():
                     self.train_outputs = self.sess.run([
                         self.dequeued_rewards,
                         self.dequeued_actions,

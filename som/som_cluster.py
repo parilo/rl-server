@@ -15,9 +15,11 @@ class SOMCluster ():
     ):
         self.train_loop = train_loop
         self.map_side_size = map_side_size
+        self.clusters_count = map_side_size * map_side_size
         self.input_dim = input_dim
         self.map_title = map_title
         self.highlighted_vector = np.zeros((1, self.input_dim))
+        self.centroids = None
 
         self.som = SOM(
             (self.input_dim,),
@@ -27,8 +29,14 @@ class SOMCluster ():
             samples_tensor
         )
 
+    def _set_centroids (self, centroids):
+        self.centroids = centroids
+
+    def get_centroids (self):
+        return self.centroids
+
     def get_clusters_count (self):
-        return self.map_side_size * self.map_side_size
+        return self.clusters_count
 
     def get_train_ops (self):
         return [self.som.get_train_op (), self.som.get_centroids_op ()]
