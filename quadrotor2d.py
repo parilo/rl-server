@@ -95,7 +95,6 @@ class Quadrotor2D ():
         self.sess.run(tf.global_variables_initializer())
 
         journalist.add_graph(self.sess.graph)
-        self.sess.run(init_all_vars_op)
 
         self.sum_rewards = 0
 
