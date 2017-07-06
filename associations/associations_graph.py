@@ -29,10 +29,10 @@ class AssociationsGraph ():
 
     def process_train_outputs (self):
 
-        rewards = self.train_loop.train_outputs [0]
-        actions = self.train_loop.train_outputs [1]
-        prev_states = self.train_loop.train_outputs [2]
-        next_states = self.train_loop.train_outputs [3]
+        rewards = self.train_loop.train_outputs [4] # from fifo queue
+        actions = self.train_loop.train_outputs [5]
+        prev_states = self.train_loop.train_outputs [6]
+        next_states = self.train_loop.train_outputs [7]
 
         prev_states_clusters = self.som_state.get_clusters (prev_states)
         next_states_clusters = self.som_state.get_clusters (next_states)
@@ -56,7 +56,7 @@ class AssociationsGraph ():
                     'edges_count' : 0,
                     'action_counts' : {},
                     'value' : 0, # value function
-                    'avg_reward' : 0
+                    'last_rewards' : []
                 }
                 self.state_nodes [ps] = prev_state_node_info
             else:
@@ -82,8 +82,8 @@ class AssociationsGraph ():
                     'edges' : {},
                     'edges_count' : 0,
                     'action_counts' : {},
-                    'value' : 0, # value function
-                    'avg_reward' : 0
+                    'value' : 0, # value function,
+                    'last_rewards' : []
                 }
                 self.state_nodes [ns] = next_state_node_info
             else:
@@ -99,7 +99,7 @@ class AssociationsGraph ():
                 edge = edge_info ['edge']
                 edge_info ['count'] += 1
             else:
-                edge = pydot.Edge(prev_state_node, next_state_node, label=str(a))
+                edge = pydot.Edge(prev_state_node, next_state_node, label=str(a), fillcolor="green")
                 edge_info = {
                     'id' : edge_key,
                     'action' : str(a),
@@ -108,7 +108,9 @@ class AssociationsGraph ():
                     'edge' : edge,
                     'count' : 1,
                     'added' : False,
-                    'probablity' : 0.0
+                    'probablity' : 0.0,
+                    'value' : 0,
+                    'last_rewards' : []
                 }
                 prev_state_node_info ['edges'][edge_key] = edge_info
                 self.edges_s_to_s [edge_key] = edge_info
@@ -127,10 +129,10 @@ class AssociationsGraph ():
 
                     edge_probability = float(affected_edge_info ['count']) / prev_state_action_count
                     affected_edge_info ['probablity'] = edge_probability
-                    edge_exists = edge_probability > 0.1
+                    edge_exists = edge_probability > 0.5
                     # emerged new edge
                     if (
-                        affected_edge_info ['count'] > 5 and
+                        affected_edge_info ['count'] > 6 and
                         edge_exists and
                         not affected_edge_info ['added']
                     ):
@@ -186,6 +188,7 @@ class AssociationsGraph ():
             # recalculate value function of prev_state and next_state
             self.recalc_value_function (next_state_node_info, r)
             self.recalc_value_function (prev_state_node_info, r)
+            self.recalc_value_function (edge_info, r)
 
 
             # if (edge_info ['added']):
@@ -203,20 +206,21 @@ class AssociationsGraph ():
 
         if (self.graph_show_index == self.graph_show_every):
             print ('-----------------------------------------------')
-            # for n in self.state_nodes:
-            #     if (n is not None):
-            #         if (n ['edges_count'] > 0 or n ['added']):
-            #             print (n ['id'] + ' v: ' + str(n['value']))
-            #             # print (n ['id'] + ' added: ' + str(n['added']) + ' edges_count: ' + str(n['edges_count']))
-            # print ('-----------------------')
-            # for ek, ei in self.edges_s_to_s.items():
-            #     # if (ei['added']):
-            #     print (ek + ' c: ' + str(ei['count']) + ' p: ' + str(ei['probablity']))
+            for n in self.state_nodes:
+                if (n is not None):
+                    if (n ['added']):
+                        print (n ['id'] + ' v: ' + str(n['value']))
+                        # print (n ['id'] + ' added: ' + str(n['added']) + ' edges_count: ' + str(n['edges_count']))
+            print ('-----------------------')
+            for ek, ei in self.edges_s_to_s.items():
+                if (ei['added']):
+                    print (ek + ' v: ' + str(ei['value']) + ' p: ' + str(ei['probablity']))
             print ('--- edges: ' + str(len(self.edges_s_to_s.items())))
             print ('-----------------------------------------------')
 
             self.sparse_not_added_edges ()
             self.recolor_state_nodes ()
+            self.recolor_action_nodes ()
             self.show_graph ()
             self.graph_show_index = 0
         else:
@@ -237,23 +241,18 @@ class AssociationsGraph ():
         del self.edges_s_to_s [edge_key]
 
     def recalc_value_function (self, state_info, reward):
-        # state_info ['avg_reward'] +=
-        value = reward
-        # print ('--- calc value')
-        for edge_key, edge_info in state_info ['edges'].items():
-            # print (' add: ' + str(edge_info ['probablity']) + ' ' + str(edge_info ['next_state']['value']))
-            value += edge_info ['probablity'] * edge_info ['next_state']['value']
-        c = len (state_info ['edges'])
-        # print (' final: ' + str(value) + ' c: ' + str(c))
-        # renormalization of edges probablities
-        if (c > 0):
-            value /= c
-        state_info ['value'] = value
 
-    def recolor_state_nodes (self):
+        state_info ['value'] += 0.05 * reward
+        lr = state_info ['last_rewards']
+        lr.append (reward)
+        if (len(lr) > 20):
+            r = lr.pop (0)
+            state_info ['value'] -= 0.05 * reward
+
+    def recolor_elements (self, elements_list, element_key):
         # min_val = 0.0
         max_val = 0.0
-        for n in self.state_nodes:
+        for n in elements_list:
             if (n is not None):
                 if (n ['added']):
                     v = math.fabs (n ['value'])
@@ -263,7 +262,7 @@ class AssociationsGraph ():
                     #     min_val = v
 
         # print ('--- recolor max val: ' + str(max_val))
-        for n in self.state_nodes:
+        for n in elements_list:
             if (n is not None):
                 if (n ['added']):
                     v = n ['value']
@@ -274,8 +273,41 @@ class AssociationsGraph ():
                         color = '#ff' + intensity + intensity
                     else:
                         color = '#' + intensity + 'ff' + intensity
-                    n ['node'].obj_dict['attributes']['fillcolor'] = color
+                    n [element_key].obj_dict['attributes']['fillcolor'] = color
                     # print (n ['id'] + ' v: ' + str(v) + ' c: ' + color)
+
+    def recolor_state_nodes (self):
+        self.recolor_elements (self.state_nodes, 'node')
+
+    def recolor_action_nodes (self):
+        self.recolor_elements (self.edges_s_to_s.values (), 'edge')
+
+    # def recolor_state_nodes (self):
+    #     # min_val = 0.0
+    #     max_val = 0.0
+    #     for n in self.state_nodes:
+    #         if (n is not None):
+    #             if (n ['added']):
+    #                 v = math.fabs (n ['value'])
+    #                 if (v > max_val):
+    #                     max_val = v
+    #                 # if (v < min_val):
+    #                 #     min_val = v
+    #
+    #     # print ('--- recolor max val: ' + str(max_val))
+    #     for n in self.state_nodes:
+    #         if (n is not None):
+    #             if (n ['added']):
+    #                 v = n ['value']
+    #                 intensity_v = 255 - int (math.floor(255 * (math.fabs(v) / max_val)))
+    #                 intensity = '{:02x}'.format(intensity_v)
+    #                 color = '#ffffff'
+    #                 if (v < 0):
+    #                     color = '#ff' + intensity + intensity
+    #                 else:
+    #                     color = '#' + intensity + 'ff' + intensity
+    #                 n ['node'].obj_dict['attributes']['fillcolor'] = color
+    #                 # print (n ['id'] + ' v: ' + str(v) + ' c: ' + color)
 
 
     def show_graph(self):
@@ -294,20 +326,24 @@ class AssociationsGraph ():
         actions = []
         for s in states_clusters:
             n = self.state_nodes [s]
-            found_better_next_state = False
+            found_next_state = False
             if (n is not None):
-                max_v = n ['value']
+
+                found_next_state = False
+                max_v = -100.0
                 action = None
                 for edge_key, edge_info in n ['edges'].copy().items():
                     if (edge_info ['added']):
-                        ns = edge_info ['next_state']
-                        ns_v = ns ['value']
-                        if (ns ['added'] and ns_v > max_v):
-                            found_better_next_state = True
+                        # ns = edge_info ['next_state']
+                        # ns_v = ns ['value']
+                        ns_v = edge_info ['value']
+                        if (ns_v > max_v):
+                        # if (ns ['added'] and ns_v > max_v):
+                            found_next_state = True
                             max_v = ns_v
                             action = edge_info ['action']
 
-            if (found_better_next_state):
+            if (found_next_state):
                 a = act_centroids [int(action)]
                 # print ('--- associations control')
                 # print (a)
@@ -319,6 +355,42 @@ class AssociationsGraph ():
                 actions.append (a)
 
         return np.array(actions).tolist ()
+
+    # with exploration
+    # def control (self, current_states_batch):
+    #     act_centroids = self.som_action.get_centroids ()
+    #     if (act_centroids is None):
+    #         return None
+    #
+    #     states_clusters = self.som_state.get_clusters (current_states_batch)
+    #     actions = []
+    #     for s in states_clusters:
+    #         n = self.state_nodes [s]
+    #         found_better_next_state = False
+    #         if (n is not None):
+    #             max_v = n ['value']
+    #             action = None
+    #             for edge_key, edge_info in n ['edges'].copy().items():
+    #                 if (edge_info ['added']):
+    #                     ns = edge_info ['next_state']
+    #                     ns_v = ns ['value']
+    #                     if (ns ['added'] and ns_v > max_v):
+    #                         found_better_next_state = True
+    #                         max_v = ns_v
+    #                         action = edge_info ['action']
+    #
+    #         if (found_better_next_state):
+    #             a = act_centroids [int(action)]
+    #             # print ('--- associations control')
+    #             # print (a)
+    #             actions.append (a)
+    #         else:
+    #             a = act_centroids [random.randint (0, self.som_action.get_clusters_count() - 1)]
+    #             # print ('--- associations explore')
+    #             # print (a)
+    #             actions.append (a)
+    #
+    #     return np.array(actions).tolist ()
 
 
 

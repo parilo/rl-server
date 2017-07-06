@@ -26,13 +26,14 @@ assoc = AssociationsGraph (train_loop, state_cluster, act_cluster)
 
 train_loop.set_loss_op (quadrotor2d.get_loss_op ())
 train_loop.add_train_ops (quadrotor2d.get_train_ops ()) # 3 train ops
-train_loop.add_train_ops (state_cluster.get_train_ops ()) # 2 train ops
-train_loop.add_train_ops (act_cluster.get_train_ops ()) # 2 train ops
+train_loop.add_store_ops (state_cluster.get_train_ops ()) # 2 train ops
+train_loop.add_store_ops (act_cluster.get_train_ops ()) # 2 train ops
 
 def train_listener ():
-    state_cluster.process_train_outputs ()
-    act_cluster.process_train_outputs ()
-    assoc.process_train_outputs ()
+    pass
+    # state_cluster.process_train_outputs ()
+    # act_cluster.process_train_outputs ()
+    # assoc.process_train_outputs ()
 
 train_loop.set_train_listener (train_listener)
 train_loop.init_vars ()
@@ -58,17 +59,28 @@ async def agent_connection(websocket, path):
             await websocket.send(json.dumps(action))
         elif method == 'act_batch':
 
-            # if random.random () > 0.5:
-            actions_assoc = assoc.control (req ['states'])
+            # actions_assoc = assoc.control (req ['states'])
+            # actions_ddpg = quadrotor2d.act_batch (req ['states'])
+
+            # actions = None
+            # if (actions_assoc is None):
+            #     actions = actions_ddpg
             # else:
-            actions_ddpg = quadrotor2d.act_batch (req ['states'])
+            #     actions = 0.5 * np.array(actions_assoc) + 0.5 * np.array(actions_ddpg)
+            #     actions = actions.tolist ()
 
             actions = None
-            if (actions_assoc is None):
-                actions = actions_ddpg
+            if random.random () > 1.0:
+                actions = assoc.control (req ['states'])
             else:
-                actions = 0.5 * np.array(actions_assoc) + 0.5 * np.array(actions_ddpg)
-                actions = actions.tolist ()
+                actions = quadrotor2d.act_batch (req ['states'])
+
+            if (actions is None):
+                actions = quadrotor2d.act_batch (req ['states'])
+
+            # else:
+            #     actions = 0.5 * np.array(actions_assoc) + 0.5 * np.array(actions_ddpg)
+            #     actions = actions.tolist ()
                 # actions = quadrotor2d.act_batch (req ['states'])
                 # print ('------ nn')
                 # print (actions)
