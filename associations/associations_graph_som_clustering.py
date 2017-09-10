@@ -34,16 +34,9 @@ class AssociationsGraph ():
         prev_states = self.train_loop.store_outputs [3]
         next_states = self.train_loop.store_outputs [4]
 
-        # print('--- actions')
-        # print(actions)
-        # print('--- clusters')
         prev_states_clusters = self.cluster_state.get_clusters (prev_states)
-        # print(prev_states_clusters)
         next_states_clusters = self.cluster_state.get_clusters (next_states)
-        # print(next_states_clusters)
         actions_clusters = self.cluster_action.get_clusters (actions)
-        # print(actions_clusters)
-        # print('----------')
 
         for ps, ns, a, r in zip (prev_states_clusters, next_states_clusters, actions_clusters, rewards):
 
@@ -136,7 +129,7 @@ class AssociationsGraph ():
 
                     edge_probability = float(affected_edge_info ['count']) / prev_state_action_count
                     affected_edge_info ['probablity'] = edge_probability
-                    edge_exists = edge_probability > 0.2
+                    edge_exists = edge_probability > 0.5
                     # emerged new edge
                     if (
                         affected_edge_info ['count'] > 2 and
@@ -145,11 +138,11 @@ class AssociationsGraph ():
                     ):
                         print ('adding edge: ' + affected_edge_key)
                         if (not affected_ps_info['added']):
-                            print ('adding node: ' + affected_ps_info ['id'])
+                            # print ('adding node: ' + affected_ps_info ['id'])
                             self.graph.add_node(affected_ps)
                             affected_ps_info ['added'] = True
                         if (not affected_ns_info['added']):
-                            print ('adding node: ' + affected_ns_info ['id'])
+                            # print ('adding node: ' + affected_ns_info ['id'])
                             self.graph.add_node(affected_ns)
                             affected_ns_info ['added'] = True
 
@@ -182,11 +175,11 @@ class AssociationsGraph ():
                         affected_ns_info ['edges_count'] -= 1
 
                         if (affected_ps_info ['edges_count'] == 0):
-                            print ('removing node: ' + affected_ps_info ['id'])
+                            # print ('removing node: ' + affected_ps_info ['id'])
                             self.graph.del_node (affected_ps)
                             affected_ps_info ['added'] = False
                         if (affected_ns_info ['edges_count'] == 0):
-                            print ('removing node: ' + affected_ns_info ['id'])
+                            # print ('removing node: ' + affected_ns_info ['id'])
                             self.graph.del_node (affected_ns)
                             affected_ns_info ['added'] = False
 
@@ -221,11 +214,11 @@ class AssociationsGraph ():
             print ('-----------------------')
             for ek, ei in self.edges_s_to_s.items():
                 if (ei['added']):
-                    print (ek + ' v: ' + str(ei['value']) + ' p: ' + str(ei['probablity']) + ' c: ' + str(ei['count']))
+                    print (ek + ' v: ' + str(ei['value']) + ' p: ' + str(ei['probablity']))
             print ('--- edges: ' + str(len(self.edges_s_to_s.items())))
             print ('-----------------------------------------------')
 
-            # self.sparse_not_added_edges ()
+            self.sparse_not_added_edges ()
             self.recolor_state_nodes ()
             self.recolor_action_nodes ()
             self.show_graph ()
@@ -325,152 +318,43 @@ class AssociationsGraph ():
         cv2.waitKey (1)
 
     def control (self, current_states_batch):
-
-        available_actions = self.cluster_action.get_neurons ()
-        available_actions_count = self.cluster_action.get_clusters_count()
-        batch_size = len(current_states_batch)
-        control_actions = np.zeros((batch_size, available_actions.shape[1]))
-
-        states_clusters = self.cluster_state.get_clusters (current_states_batch)
-        for i, s in zip(range(batch_size), states_clusters):
-            # print ('--- i {}'.format(i))
-            if random.uniform(0, 1) < 0.1:
-                ai = random.randint(0, available_actions_count-1)
-                control_actions[i] = available_actions[ai]
-                continue
-
-            action_id = self.mc_graph_search(s)
-            if action_id is None:
-                ai = random.randint(0, available_actions_count-1)
-                # print(ai)
-                control_actions[i] = available_actions[ai]
-            else:
-                print ('--- control: s: {} a: {}'.format(s, action_id))
-                control_actions[i] = available_actions[action_id]
-
-        # print ('--- control actions')
-        # print (control_actions)
-        return control_actions.tolist ()
-        # return np.zeros((current_states_batch.shape[0], 2))
-
-    def mc_graph_search (self, initial_state_cluster):
-
-        search_depth = 5
-        num_of_samples = 5
-        # print ('--- mcgs from state: {}'.format(initial_state_cluster))
-        # need to check every possible actions
-        state = self.state_nodes [initial_state_cluster]
-        if (state is not None):
-
-            best_action_value = -1000.0
-            best_action_id = None
-
-            for edge_key, edge_info in state ['edges'].copy().items():
-                if (edge_info ['added']):
-                    edge_value = edge_info ['probablity'] * edge_info ['value']
-                    next_state = edge_info ['next_state']
-                    next_state_id = int(next_state ['id'])
-                    action_id = int(edge_info ['action'])
-                    value = 0.0
-                    depth = 0.0
-                    for i in range(num_of_samples):
-                        sample_value, sample_depth = self.mc_graph_search_sample (next_state_id, search_depth)
-                        value += sample_value / float(num_of_samples)
-                        depth += sample_depth / float(num_of_samples)
-                    # print ('--- mcgs: a: {} v: {} ev: {} s: {} mcdsv: {} d: {}'.format(action_id, (edge_value + value), edge_value, next_state_id, value, depth))
-
-                    value += edge_value
-
-                    if value > best_action_value:
-                        best_action_value = value
-                        best_action_id = action_id
-
-            return best_action_id
-        else:
+        act_centroids = self.cluster_action.get_centroids ()
+        if (act_centroids is None):
             return None
 
-    def mc_graph_search_sample (self, initial_state_cluster, search_depth):
+        states_clusters = self.cluster_state.get_clusters (current_states_batch)
+        actions = []
+        for s in states_clusters:
+            n = self.state_nodes [s]
+            found_next_state = False
+            if (n is not None):
 
-        sample_value = 0
-        current_depth = 0
-        prev_state = self.state_nodes [initial_state_cluster]
-        visited = {prev_state['id'] : True}
+                found_next_state = False
+                max_v = -100.0
+                action = None
+                for edge_key, edge_info in n ['edges'].copy().items():
+                    if (edge_info ['added']):
+                        # ns = edge_info ['next_state']
+                        # ns_v = ns ['value']
+                        ns_v = edge_info ['value']
+                        if (ns_v > max_v):
+                        # if (ns ['added'] and ns_v > max_v):
+                            found_next_state = True
+                            max_v = ns_v
+                            action = edge_info ['action']
 
-        if prev_state is None:
-            return sample_value, current_depth
-
-        while True:
-
-            edges_count = len(prev_state ['edges'].values())
-            # print ('--- edges count: {}'.format(edges_count))
-            if edges_count < 1:
-                return sample_value, current_depth
-
-            # try to select next
-            edge_value = 0
-            edge_info = None
-            for i in range(10):
-                ei = random.randint(0, edges_count - 1)
-                edge_info = list(prev_state ['edges'].values())[ei]
-                if (edge_info ['added']):
-                    edge_value = edge_info ['probablity'] * edge_info ['value']
-                    break
-                else:
-                    edge_info = None
-
-            if edge_info is None:
-                return sample_value, current_depth
+            if (found_next_state):
+                a = act_centroids [int(action)]
+                # print ('--- associations control')
+                # print (a)
+                actions.append (a)
             else:
-                prev_state = edge_info['next_state']
-                if prev_state['id'] in visited:
-                    return sample_value, current_depth
-                else:
-                    sample_value += edge_value
-                    current_depth += 1
+                a = act_centroids [random.randint (0, self.cluster_action.get_clusters_count() - 1)]
+                # print ('--- associations explore')
+                # print (a)
+                actions.append (a)
 
-            if current_depth == search_depth - 1:
-                return sample_value, current_depth
-
-
-
-    # def control (self, current_states_batch):
-    #     act_centroids = self.cluster_action.get_centroids ()
-    #     if (act_centroids is None):
-    #         return None
-    #
-    #     states_clusters = self.cluster_state.get_clusters (current_states_batch)
-    #     actions = []
-    #     for s in states_clusters:
-    #         n = self.state_nodes [s]
-    #         found_next_state = False
-    #         if (n is not None):
-    #
-    #             found_next_state = False
-    #             max_v = -100.0
-    #             action = None
-    #             for edge_key, edge_info in n ['edges'].copy().items():
-    #                 if (edge_info ['added']):
-    #                     # ns = edge_info ['next_state']
-    #                     # ns_v = ns ['value']
-    #                     ns_v = edge_info ['value']
-    #                     if (ns_v > max_v):
-    #                     # if (ns ['added'] and ns_v > max_v):
-    #                         found_next_state = True
-    #                         max_v = ns_v
-    #                         action = edge_info ['action']
-    #
-    #         if (found_next_state):
-    #             a = act_centroids [int(action)]
-    #             # print ('--- associations control')
-    #             # print (a)
-    #             actions.append (a)
-    #         else:
-    #             a = act_centroids [random.randint (0, self.cluster_action.get_clusters_count() - 1)]
-    #             # print ('--- associations explore')
-    #             # print (a)
-    #             actions.append (a)
-    #
-    #     return np.array(actions).tolist ()
+        return np.array(actions).tolist ()
 
     # with exploration
     # def control (self, current_states_batch):

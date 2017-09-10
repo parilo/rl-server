@@ -1,5 +1,6 @@
 # DDPG taken from
 # https://github.com/nivwusquorum/tensorflow-deepq
+# Szymon Sidor
 
 import numpy as np
 import random
@@ -201,15 +202,28 @@ class ContinuousDeepQ(object):
             # tf.scalar_summary("value_for_given_action", tf.reduce_mean(self.value_given_action))
             temp_diff                       = self.value_given_action - self.future_reward
 
-            self.critic_error               = tf.identity(tf.reduce_mean(tf.square(temp_diff)), name='critic_error')
+            # + 0.1 * tf.reduce_mean(tf.square(self.given_action))
+            #l2_loss = 0
+            #for v in tf.trainable_variables ():
+            #    l2_loss += tf.nn.l2_loss (v)
+            self.critic_error               = tf.identity(
+                tf.reduce_mean(tf.square(temp_diff)),
+                name='critic_error'
+            )
             ##### OPTIMIZATION #####
             critic_gradients                       = self.optimizer.compute_gradients(self.critic_error, var_list=self.critic.variables())
+            # critic_gradients = self.get_optimizer_gradients (
+            #     self.optimizer,
+            #     self.critic_error,
+            #     vars=self.critic.variables(),
+            #     clip=1.0
+            # )
             # Add histograms for gradients.
-            for grad, var in critic_gradients:
-                # tf.histogram_summary('critic_update/' + var.name, var)
-                if grad is not None:
-                    # tf.histogram_summary('critic_update/' + var.name + '/gradients', grad)
-                    pass
+            # for grad, var in critic_gradients:
+            #     # tf.histogram_summary('critic_update/' + var.name, var)
+            #     if grad is not None:
+            #         # tf.histogram_summary('critic_update/' + var.name + '/gradients', grad)
+            #         pass
             self.critic_update              = self.optimizer.apply_gradients(critic_gradients, name='critic_train_op')
             # tf.scalar_summary("critic_error", self.critic_error)
 
@@ -222,12 +236,18 @@ class ContinuousDeepQ(object):
             # here we are maximizing actor score.
             # only optimize actor variables here, while keeping critic constant
             actor_gradients = self.optimizer.compute_gradients(tf.reduce_mean(-self.actor_score), var_list=self.actor.variables())
+            # actor_gradients = self.get_optimizer_gradients (
+            #     self.optimizer,
+            #     tf.reduce_mean(-self.actor_score),
+            #     vars=self.actor.variables(),
+            #     clip=1.0
+            # )
             # Add histograms for gradients.
-            for grad, var in actor_gradients:
-                # tf.histogram_summary('actor_update/' + var.name, var)
-                if grad is not None:
-                    # tf.histogram_summary('actor_update/' + var.name + '/gradients', grad)
-                    pass
+            # for grad, var in actor_gradients:
+            #     # tf.histogram_summary('actor_update/' + var.name, var)
+            #     if grad is not None:
+            #         # tf.histogram_summary('actor_update/' + var.name + '/gradients', grad)
+            #         pass
             self.actor_update              = self.optimizer.apply_gradients(actor_gradients, name='actor_train_op')
             # tf.scalar_summary("actor_score", tf.reduce_mean(self.actor_score))
 
@@ -239,6 +259,12 @@ class ContinuousDeepQ(object):
 
         # self.summarize = tf.merge_all_summaries()
         self.no_op1 = tf.no_op()
+
+    def get_optimizer_gradients(self, optimizer, loss, vars, clip):
+        gradvars = optimizer.compute_gradients(loss, var_list=vars)
+        gradients, v = zip(*gradvars)
+        gradients, _ = tf.clip_by_global_norm(gradients, clip)
+        return zip(gradients, v)
 
     def action(self, observation, disable_exploration=False):
         """Given observation returns the action that should be chosen using

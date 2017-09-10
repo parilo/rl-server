@@ -20,7 +20,7 @@ class Layer(object):
             for input_idx, input_size in enumerate(input_sizes):
                 W_name = "W_%d" % (input_idx,)
                 W_initializer =  tf.random_uniform_initializer(
-                        -0.003, 0.003)
+                        -0.05, 0.05)
                 W_var = tf.get_variable(W_name, (input_size, output_size), initializer=W_initializer)
                 get_W_index += 1
                 self.Ws.append(W_var)
@@ -90,11 +90,11 @@ class MLP(object):
         return MLP(self.input_sizes, self.hiddens, nonlinearities, scope=scope,
                 given_layers=given_layers)
 
-    
+
 class SeparatedMLP(object):
     def __init__(self, mlps):
         self.mlps = mlps
-        
+
     def __call__(self, xs):
         res = []
         for mlp in self.mlps:
@@ -106,7 +106,7 @@ class SeparatedMLP(object):
         for mlp in self.mlps:
             res.extend (mlp.variables ())
         return res
-    
+
     def copy(self, scope=None):
         new_mlps = []
         for (i, mlp) in enumerate(self.mlps):

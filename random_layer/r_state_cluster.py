@@ -1,17 +1,18 @@
 import numpy as np
-from .som_cluster import SOMCluster
+from .r_cluster import RCluster
 
-class SOMStateCluster (SOMCluster):
+class RStateCluster (RCluster):
 
     def __init__ (self, train_loop):
 
         super().__init__(
             train_loop,
-            60, # map_side_size,
+            20, # map_side_size,
+            (-10.0, 10.0), # amplitude
             train_loop.observation_size, # input_dim,
             # train_loop.dequeued_next_states, # samples_tensor,
             train_loop.inp_next_states,
-            'State clusters' # map_title
+            'state_clusters' # scope
         )
 
     #     self.train_loop = train_loop
@@ -31,8 +32,6 @@ class SOMStateCluster (SOMCluster):
     #     return [self.som.get_train_op (), self.som.get_centroids_op ()]
 
     def process_outputs (self):
-        # print (self.train_loop.train_outputs [10].shape)
-        image_grid = np.reshape(self.train_loop.store_outputs [6], [self.map_side_size, self.map_side_size, self.input_dim])[:,:,5:8]
-        self.show_centroids (image_grid)
-        # cv2.imshow('State clusters', cv2.resize(image_grid, (0, 0), fx=30, fy=30, interpolation=cv2.INTER_NEAREST))
-        # cv2.waitKey (1)
+        # image_grid = np.reshape(self.train_loop.store_outputs [6], [self.map_side_size, self.map_side_size, self.input_dim])[:,:,5:8]
+        # self.show_centroids (image_grid)
+        pass

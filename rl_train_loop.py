@@ -17,9 +17,9 @@ class RLTrainLoop ():
         self.sess = tf.Session(config=config)
         self.logger = tf.summary.FileWriter("logs")
 
-        batch_size = 128
-        self.max_experience_size = 1000000
-        self.start_learning_after = 200 #00
+        self.batch_size = 128
+        self.max_experience_size = 400000
+        self.start_learning_after = 5000
         self.store_every_nth = 5
 
         self.inp_rewards = tf.placeholder (tf.float32, (None,))
@@ -66,13 +66,13 @@ class RLTrainLoop ():
 
         self.exp_size_op = all_experience.size ()
 
-        [rewards, actions, prev_states, next_states] = all_experience.dequeue_many (batch_size)
+        [rewards, actions, prev_states, next_states] = all_experience.dequeue_many (self.batch_size)
         self.dequeued_rewards = rewards
         self.dequeued_actions = actions
         self.dequeued_prev_states = prev_states
         self.dequeued_next_states = next_states
 
-        [fifo_rewards, fifo_actions, fifo_prev_states, fifo_next_states] = exp_fifo_queue.dequeue_many (batch_size)
+        [fifo_rewards, fifo_actions, fifo_prev_states, fifo_next_states] = exp_fifo_queue.dequeue_many (self.batch_size)
         self.dequeued_fifo_rewards = fifo_rewards
         self.dequeued_fifo_actions = fifo_actions
         self.dequeued_fifo_prev_states = fifo_prev_states
@@ -81,6 +81,7 @@ class RLTrainLoop ():
 
         self.sum_rewards = 0
         self.store_index = 0
+        self.stored_count = 0
 
         self.train_ops = []
         self.store_ops = []
@@ -92,12 +93,30 @@ class RLTrainLoop ():
 
         self.logger.add_graph(self.sess.graph)
         self.sess.run(tf.global_variables_initializer())
+        self.saver = tf.train.Saver(max_to_keep=None)
+
+        # self.saver.restore(self.sess, "submissions/6/model-16500000.ckpt")
+        # self.saver.restore(self.sess, "submissions/11/model-22000000.ckpt")
+        # self.saver.restore(self.sess, "submissions/13/model-8000000.ckpt")
 
     def store_exp_batch (self, rewards, actions, prev_states, next_states):
+        # print ('store')
+        # print (prev_states)
+        # print (next_states)
+        # print (actions)
+        # print (rewards)
+        self.stored_count += len (rewards)
+        # if self.stored_count < self.start_learning_after:
+        #     print ('stored exp: {}'.format(self.stored_count))
+
         # self.store_index += 1
         # if self.store_index % self.store_every_nth == 0:
-        self.sess.run ([
-            self.exp_enqueue_op#,
+        self.store_outputs = self.sess.run ([
+            self.exp_enqueue_op,
+            self.inp_rewards,
+            self.inp_actions,
+            self.inp_prev_states,
+            self.inp_next_states
             #self.exp_fifo_enqueue_op
         ] + self.store_ops, {
             self.inp_rewards: np.array(rewards),
@@ -106,6 +125,8 @@ class RLTrainLoop ():
             self.inp_next_states: np.array(next_states)
         })
         self.sum_rewards += np.sum(rewards)
+        if self.store_listener is not None:
+            self.store_listener ()
 
     def add_train_ops (self, train_ops_list):
         self.train_ops += train_ops_list
@@ -118,6 +139,9 @@ class RLTrainLoop ():
 
     def set_train_listener (self, listener):
         self.train_listener = listener
+
+    def set_store_listener (self, listener):
+        self.store_listener = listener
 
     def stop_train (self):
         self.coord.request_stop()
@@ -132,7 +156,12 @@ class RLTrainLoop ():
 
     def train (self):
 
+        for v in tf.trainable_variables():
+            print ("--- all v: " + v.name)
+            # print (v)
+
         def TrainLoop(coord):
+
             try:
                 i = 0
                 while not coord.should_stop():
@@ -157,7 +186,8 @@ class RLTrainLoop ():
                     queue_size = self.train_outputs [4] #[8]
                     loss = self.train_outputs [5] #[9]
 
-                    # self.train_listener ()
+                    if self.train_listener is not None:
+                        self.train_listener ()
 
                     if queue_size < self.max_experience_size - 10000:
                         [_, size] = self.sess.run ([
@@ -170,11 +200,17 @@ class RLTrainLoop ():
                             self.inp_next_states: ns
                         })
 
-                    i += 1
-                    print ('i: {}'.format(i))
-                    if i % 50 == 49:
+                    # print ('i: {}'.format(i))
+                    if i % 2000 == 1999:
                         print ('trains: {} rewards: {} loss: {} stored: {}'.format(i, self.sum_rewards, loss, queue_size))
                         self.sum_rewards = 0
+
+                    if i % 100000 == 0:
+                        save_path = self.saver.save(self.sess, 'ckpt/model-{}.ckpt'.format(i))
+                        print("Model saved in file: %s" % save_path)
+
+                    i += 1
+
 
             except tf.errors.OutOfRangeError:
                 print('Done training -- epoch limit reached')
