@@ -2,6 +2,7 @@ import numpy as np
 import tempfile
 import tensorflow as tf
 import threading
+import time
 
 class RLTrainLoop ():
 
@@ -89,6 +90,9 @@ class RLTrainLoop ():
         self.train_listener = None
         self.store_listener = None
 
+        self.storing_count = 0
+        self.states_buffer = np.zeros((0, 50))
+
     def init_vars (self):
 
         self.logger.add_graph(self.sess.graph)
@@ -98,6 +102,7 @@ class RLTrainLoop ():
         # self.saver.restore(self.sess, "submissions/6/model-16500000.ckpt")
         # self.saver.restore(self.sess, "submissions/11/model-22000000.ckpt")
         # self.saver.restore(self.sess, "submissions/13/model-8000000.ckpt")
+        # self.saver.restore(self.sess, "submissions/17/model-4400000.ckpt")
 
     def store_exp_batch (self, rewards, actions, prev_states, next_states):
         # print ('store')
@@ -106,8 +111,8 @@ class RLTrainLoop ():
         # print (actions)
         # print (rewards)
         self.stored_count += len (rewards)
-        # if self.stored_count < self.start_learning_after:
-        #     print ('stored exp: {}'.format(self.stored_count))
+        if self.stored_count < self.start_learning_after:
+            print ('stored exp: {}'.format(self.stored_count))
 
         # self.store_index += 1
         # if self.store_index % self.store_every_nth == 0:
@@ -127,6 +132,14 @@ class RLTrainLoop ():
         self.sum_rewards += np.sum(rewards)
         if self.store_listener is not None:
             self.store_listener ()
+
+        # self.storing_count += 1
+        # self.states_buffer = np.concatenate([self.states_buffer, np.array(prev_states)], axis=0)
+        # if self.storing_count % 20 == 0:
+        #     print('mean')
+        #     print(np.mean(self.states_buffer, axis=0))
+        #     print('std')
+        #     print(np.std(self.states_buffer, axis=0))
 
     def add_train_ops (self, train_ops_list):
         self.train_ops += train_ops_list
@@ -165,6 +178,12 @@ class RLTrainLoop ():
             try:
                 i = 0
                 while not coord.should_stop():
+
+                    if i > self.stored_count:
+                        print ('--- waiting for exp: {} {}'.format(i, self.stored_count))
+                        time.sleep(1.0)
+                        continue
+
                     self.train_outputs = self.sess.run([
                         self.dequeued_rewards,
                         self.dequeued_actions,
@@ -205,7 +224,7 @@ class RLTrainLoop ():
                         print ('trains: {} rewards: {} loss: {} stored: {}'.format(i, self.sum_rewards, loss, queue_size))
                         self.sum_rewards = 0
 
-                    if i % 100000 == 0:
+                    if i % 10000 == 0:
                         save_path = self.saver.save(self.sess, 'ckpt/model-{}.ckpt'.format(i))
                         print("Model saved in file: %s" % save_path)
 

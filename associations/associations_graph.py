@@ -27,6 +27,9 @@ class AssociationsGraph ():
         self.graph_show_index = 0
         self.graph_show_every = 200
 
+        self.act_count = 0
+        self.act_control_count = 0
+
     def process_outputs (self):
 
         rewards = self.train_loop.store_outputs [1] # from fifo queue
@@ -136,20 +139,20 @@ class AssociationsGraph ():
 
                     edge_probability = float(affected_edge_info ['count']) / prev_state_action_count
                     affected_edge_info ['probablity'] = edge_probability
-                    edge_exists = edge_probability > 0.2
+                    edge_exists = edge_probability > 0.3
                     # emerged new edge
                     if (
                         affected_edge_info ['count'] > 2 and
                         edge_exists and
                         not affected_edge_info ['added']
                     ):
-                        print ('adding edge: ' + affected_edge_key)
+                        # print ('adding edge: ' + affected_edge_key)
                         if (not affected_ps_info['added']):
-                            print ('adding node: ' + affected_ps_info ['id'])
+                            # print ('adding node: ' + affected_ps_info ['id'])
                             self.graph.add_node(affected_ps)
                             affected_ps_info ['added'] = True
                         if (not affected_ns_info['added']):
-                            print ('adding node: ' + affected_ns_info ['id'])
+                            # print ('adding node: ' + affected_ns_info ['id'])
                             self.graph.add_node(affected_ns)
                             affected_ns_info ['added'] = True
 
@@ -163,7 +166,7 @@ class AssociationsGraph ():
                         not edge_exists and
                         affected_edge_info ['added']
                     ):
-                        print ('removing edge: ' + affected_edge_key)
+                        # print ('removing edge: ' + affected_edge_key)
                         edge_list = self.graph.get_edge (affected_edge.get_source (), affected_edge.get_destination ())
                         if (isinstance (edge_list, (pydot.Edge))):
                             self.graph.del_edge (affected_ps, affected_ns)
@@ -182,19 +185,20 @@ class AssociationsGraph ():
                         affected_ns_info ['edges_count'] -= 1
 
                         if (affected_ps_info ['edges_count'] == 0):
-                            print ('removing node: ' + affected_ps_info ['id'])
+                            # print ('removing node: ' + affected_ps_info ['id'])
                             self.graph.del_node (affected_ps)
                             affected_ps_info ['added'] = False
                         if (affected_ns_info ['edges_count'] == 0):
-                            print ('removing node: ' + affected_ns_info ['id'])
+                            # print ('removing node: ' + affected_ns_info ['id'])
                             self.graph.del_node (affected_ns)
                             affected_ns_info ['added'] = False
 
                     # elif ()
 
             # recalculate value function of prev_state and next_state
-            self.recalc_value_function (next_state_node_info, r)
-            self.recalc_value_function (prev_state_node_info, r)
+            # self.recalc_value_function (next_state_node_info, r)
+            # self.recalc_value_function (prev_state_node_info, r)
+            self.recalc_value_function_from_frequency (next_state_node_info)
             self.recalc_value_function (edge_info, r)
 
 
@@ -225,7 +229,7 @@ class AssociationsGraph ():
             print ('--- edges: ' + str(len(self.edges_s_to_s.items())))
             print ('-----------------------------------------------')
 
-            # self.sparse_not_added_edges ()
+            self.sparse_not_added_edges ()
             self.recolor_state_nodes ()
             self.recolor_action_nodes ()
             self.show_graph ()
@@ -255,6 +259,9 @@ class AssociationsGraph ():
         if (len(lr) > 20):
             r = lr.pop (0)
             state_info ['value'] -= 0.05 * reward
+
+    def recalc_value_function_from_frequency (self, state_info):
+        state_info ['value'] += 0.1
 
     def recolor_elements (self, elements_list, element_key):
         # min_val = 0.0
@@ -318,11 +325,32 @@ class AssociationsGraph ():
 
 
     def show_graph(self):
+        return
         png = self.graph.create (format='png')
         file_bytes = np.asarray(bytearray(png), dtype=np.uint8)
         img = cv2.imdecode (file_bytes, cv2.IMREAD_COLOR)
         cv2.imshow ('Associations', img)
         cv2.waitKey (1)
+
+    def has_more_than_one_edge(self, state_cluster_index):
+        added_edges = 0
+        state = self.state_nodes [state_cluster_index]
+        if state is not None:
+            for edge_key, edge_info in state ['edges'].copy().items():
+                if (edge_info ['added']):
+                    added_edges += 1
+                    if added_edges > 1:
+                        return True
+        return False
+
+    def count_edges(self, state_cluster_index):
+        added_edges = 0
+        state = self.state_nodes [state_cluster_index]
+        if state is not None:
+            for edge_key, edge_info in state ['edges'].copy().items():
+                if (edge_info ['added']):
+                    added_edges += 1
+        return added_edges
 
     def control (self, current_states_batch):
 
@@ -333,8 +361,26 @@ class AssociationsGraph ():
 
         states_clusters = self.cluster_state.get_clusters (current_states_batch)
         for i, s in zip(range(batch_size), states_clusters):
-            # print ('--- i {}'.format(i))
-            if random.uniform(0, 1) < 0.1:
+
+            # if not self.has_more_than_one_edge(s):
+            #     ai = random.randint(0, available_actions_count-1)
+            #     control_actions[i] = available_actions[ai]
+            #     continue
+
+            self.act_count += 1
+
+            if self.act_count == 10000:
+                print ('--- act stat: {} {} {}'.format(self.act_control_count, self.act_count, float(self.act_control_count)/self.act_count ))
+                self.act_count = 0
+                self.act_control_count = 0
+
+            edge_count = self.count_edges(s)
+            if edge_count == 0:
+                ai = random.randint(0, available_actions_count-1)
+                control_actions[i] = available_actions[ai]
+                continue
+
+            if random.uniform(0, 1) < 0.5 / self.count_edges(s):
                 ai = random.randint(0, available_actions_count-1)
                 control_actions[i] = available_actions[ai]
                 continue
@@ -342,11 +388,11 @@ class AssociationsGraph ():
             action_id = self.mc_graph_search(s)
             if action_id is None:
                 ai = random.randint(0, available_actions_count-1)
-                # print(ai)
                 control_actions[i] = available_actions[ai]
             else:
-                print ('--- control: s: {} a: {}'.format(s, action_id))
+                # print ('--- control: s: {} a: {}'.format(s, action_id))
                 control_actions[i] = available_actions[action_id]
+                self.act_control_count += 1
 
         # print ('--- control actions')
         # print (control_actions)
@@ -355,8 +401,8 @@ class AssociationsGraph ():
 
     def mc_graph_search (self, initial_state_cluster):
 
-        search_depth = 5
-        num_of_samples = 5
+        search_depth = 10
+        num_of_samples = 10
         # print ('--- mcgs from state: {}'.format(initial_state_cluster))
         # need to check every possible actions
         state = self.state_nodes [initial_state_cluster]

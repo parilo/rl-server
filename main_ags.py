@@ -42,7 +42,8 @@ def store_listener ():
 train_loop.set_store_listener (store_listener)
 train_loop.init_vars ()
 act_cluster.init ()
-# state_cluster.init ()
+state_cluster.init ()
+state_cluster.set_updatable (True)
 
 async def agent_connection(websocket, path):
     while websocket.open:

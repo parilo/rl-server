@@ -5,10 +5,16 @@ class RActCluster (RCluster):
 
     def __init__ (self, train_loop):
 
+        a = 10
+        mean_state_val = np.array([a, a])
+        std_state_val = np.array([a, a])
+
         super().__init__(
             train_loop,
-            10, # map_side_size,
-            (0.0, 15.0), # amplitude
+            5, # map_side_size,
+            # (0.0, 15.0), # amplitude
+            mean_state_val,
+            std_state_val,
             train_loop.num_actions, # input_dim,
             # train_loop.dequeued_actions, # samples_tensor,
             train_loop.inp_actions,
@@ -16,7 +22,7 @@ class RActCluster (RCluster):
         )
 
     def process_outputs (self):
-        self.show_centroids (None)
+        # self.show_centroids (None)
         pass
 
         # centroids = self.train_loop.store_outputs [8]
