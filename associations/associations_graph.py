@@ -11,6 +11,8 @@ class AssociationsGraph ():
 
     def __init__ (self, train_loop, cluster_state, cluster_action):
 
+        self.gamma = 0.96
+
         self.train_loop = train_loop
         self.cluster_state = cluster_state
         self.cluster_action = cluster_action
@@ -25,9 +27,10 @@ class AssociationsGraph ():
 
         self.graph = pydot.Dot(graph_type='digraph')
         self.graph_show_index = 0
-        self.graph_show_every = 200
+        self.graph_show_every = 200 * 24 * 8
 
         self.act_count = 0
+        self.one_edge_count = 0
         self.act_control_count = 0
 
     def process_outputs (self):
@@ -139,10 +142,10 @@ class AssociationsGraph ():
 
                     edge_probability = float(affected_edge_info ['count']) / prev_state_action_count
                     affected_edge_info ['probablity'] = edge_probability
-                    edge_exists = edge_probability > 0.3
+                    edge_exists = edge_probability > 0.2
                     # emerged new edge
                     if (
-                        affected_edge_info ['count'] > 2 and
+                        affected_edge_info ['count'] > 10 and
                         edge_exists and
                         not affected_edge_info ['added']
                     ):
@@ -216,18 +219,18 @@ class AssociationsGraph ():
                 print ('warning: ns edges_count: ' + str(next_state_node_info ['edges_count']))
 
         if (self.graph_show_index == self.graph_show_every):
-            print ('-----------------------------------------------')
-            for n in self.state_nodes:
-                if (n is not None):
-                    if (n ['added']):
-                        print (n ['id'] + ' v: ' + str(n['value']))
-                        # print (n ['id'] + ' added: ' + str(n['added']) + ' edges_count: ' + str(n['edges_count']))
-            print ('-----------------------')
-            for ek, ei in self.edges_s_to_s.items():
-                if (ei['added']):
-                    print (ek + ' v: ' + str(ei['value']) + ' p: ' + str(ei['probablity']) + ' c: ' + str(ei['count']))
-            print ('--- edges: ' + str(len(self.edges_s_to_s.items())))
-            print ('-----------------------------------------------')
+            # print ('-----------------------------------------------')
+            # for n in self.state_nodes:
+            #     if (n is not None):
+            #         if (n ['added']):
+            #             print (n ['id'] + ' v: ' + str(n['value']))
+            #             # print (n ['id'] + ' added: ' + str(n['added']) + ' edges_count: ' + str(n['edges_count']))
+            # print ('-----------------------')
+            # for ek, ei in self.edges_s_to_s.items():
+            #     if (ei['added']):
+            #         print (ek + ' v: ' + str(ei['value']) + ' p: ' + str(ei['probablity']) + ' c: ' + str(ei['count']))
+            # print ('--- edges: ' + str(len(self.edges_s_to_s.items())))
+            # print ('-----------------------------------------------')
 
             self.sparse_not_added_edges ()
             self.recolor_state_nodes ()
@@ -252,13 +255,13 @@ class AssociationsGraph ():
         del self.edges_s_to_s [edge_key]
 
     def recalc_value_function (self, state_info, reward):
-
-        state_info ['value'] += 0.05 * reward
+        # print('--- reward: {}'.format(reward))
+        state_info ['value'] += 0.01 * reward
         lr = state_info ['last_rewards']
         lr.append (reward)
-        if (len(lr) > 20):
+        if (len(lr) > 100):
             r = lr.pop (0)
-            state_info ['value'] -= 0.05 * reward
+            state_info ['value'] -= 0.01 * reward
 
     def recalc_value_function_from_frequency (self, state_info):
         state_info ['value'] += 0.1
@@ -325,10 +328,11 @@ class AssociationsGraph ():
 
 
     def show_graph(self):
-        return
+        # return
         png = self.graph.create (format='png')
         file_bytes = np.asarray(bytearray(png), dtype=np.uint8)
         img = cv2.imdecode (file_bytes, cv2.IMREAD_COLOR)
+        img = cv2.resize(img, (600, 600))
         cv2.imshow ('Associations', img)
         cv2.waitKey (1)
 
@@ -352,6 +356,63 @@ class AssociationsGraph ():
                     added_edges += 1
         return added_edges
 
+    def count_following_nodes(self, state_cluster_index):
+        state = self.state_nodes [state_cluster_index]
+        edges = []
+        if state is not None:
+            for edge_key, edge_info in state ['edges'].copy().items():
+                if (edge_info ['added']):
+                    edges.append(edge_key)
+        return len(np.unique(np.array(edges)))
+
+    def get_action_to_try(self, state_cluster_index):
+
+        explore_count = 100
+
+        state_info = self.state_nodes [state_cluster_index]
+        if (state_info is None):
+            return 0
+
+        available_actions_count = self.cluster_action.get_clusters_count()
+        if not ('action_to_try' in state_info):
+            state_info['action_to_try'] = random.randint(0, available_actions_count-1)
+            state_info['action_to_try_count_left'] = explore_count
+        elif state_info['action_to_try_count_left'] == 0:
+            state_info['action_to_try'] = random.randint(0, available_actions_count-1)
+            state_info['action_to_try_count_left'] = explore_count
+
+        action_id = state_info['action_to_try']
+        state_info['action_to_try_count_left'] -= 1
+        return action_id
+
+    def is_explore(self, state_cluster_index):
+
+        explore_count = 100 * 5
+        exploit_count = 500 * 15
+
+        state_info = self.state_nodes [state_cluster_index]
+        if (state_info is None):
+            return True
+
+        if not ('explore_count' in state_info):
+            state_info['explore_count'] = random.randint(0, explore_count)
+            state_info['exploit_count'] = exploit_count
+            return True
+        elif state_info['explore_count'] > 0:
+            state_info['explore_count'] -= 1
+            return True
+        elif state_info['exploit_count'] > 0:
+            state_info['exploit_count'] -= 1
+            return False
+        else:
+            edge_count = self.count_edges(state_cluster_index)
+            if edge_count == 0:
+                state_info['explore_count'] = explore_count
+            else:
+                state_info['explore_count'] = explore_count / edge_count
+            state_info['exploit_count'] = exploit_count
+            return False
+
     def control (self, current_states_batch):
 
         available_actions = self.cluster_action.get_neurons ()
@@ -360,6 +421,8 @@ class AssociationsGraph ():
         control_actions = np.zeros((batch_size, available_actions.shape[1]))
 
         states_clusters = self.cluster_state.get_clusters (current_states_batch)
+        # print('--- state {}'.format(states_clusters))
+        # states_clusters = [0] * len(states_clusters)
         for i, s in zip(range(batch_size), states_clusters):
 
             # if not self.has_more_than_one_edge(s):
@@ -369,46 +432,69 @@ class AssociationsGraph ():
 
             self.act_count += 1
 
-            if self.act_count == 10000:
-                print ('--- act stat: {} {} {}'.format(self.act_control_count, self.act_count, float(self.act_control_count)/self.act_count ))
+            if self.act_count == 5000:
+                print ('--- act stat: {} {} {} {}'.format(
+                    self.act_control_count,
+                    self.one_edge_count,
+                    self.act_count,
+                    float(self.act_control_count)/self.act_count)
+                )
+                self.cluster_state.set_adaptable(self.one_edge_count < 1500)
                 self.act_count = 0
                 self.act_control_count = 0
+                self.one_edge_count = 0
 
-            edge_count = self.count_edges(s)
-            if edge_count == 0:
-                ai = random.randint(0, available_actions_count-1)
+            # also need to explore
+
+            edge_count = self.count_following_nodes(s)
+            if edge_count < 2:
+                # ai = random.randint(0, available_actions_count-1)
+                ai = self.get_action_to_try(s)
                 control_actions[i] = available_actions[ai]
+                self.one_edge_count += 1
+                # self.act_control_count += 1
+                # print ('--- random control {}'.format(control_actions[i]))
                 continue
 
-            if random.uniform(0, 1) < 0.5 / self.count_edges(s):
-                ai = random.randint(0, available_actions_count-1)
+            if self.is_explore(s):
+                ai = self.get_action_to_try(s)
                 control_actions[i] = available_actions[ai]
+                # print ('--- random control {}'.format(control_actions[i]))
                 continue
+
+            # if random.uniform(0, 1) < 0.5 / self.count_edges(s):
+            #     ai = random.randint(0, available_actions_count-1)
+            #     control_actions[i] = available_actions[ai]
+            #     continue
 
             action_id = self.mc_graph_search(s)
             if action_id is None:
-                ai = random.randint(0, available_actions_count-1)
+                # ai = random.randint(0, available_actions_count-1)
+                ai = self.get_action_to_try(s)
                 control_actions[i] = available_actions[ai]
+                self.act_control_count += 1
+                # print ('--- random control {}'.format(control_actions[i]))
             else:
                 # print ('--- control: s: {} a: {}'.format(s, action_id))
                 control_actions[i] = available_actions[action_id]
                 self.act_control_count += 1
+                # print ('--- inferred control {}'.format(control_actions[i]))
 
-        # print ('--- control actions')
+        # print ('--- control actions {}'.format(control_actions))
         # print (control_actions)
         return control_actions.tolist ()
         # return np.zeros((current_states_batch.shape[0], 2))
 
     def mc_graph_search (self, initial_state_cluster):
 
-        search_depth = 10
-        num_of_samples = 10
+        search_depth = 15
+        num_of_samples = 15
         # print ('--- mcgs from state: {}'.format(initial_state_cluster))
         # need to check every possible actions
         state = self.state_nodes [initial_state_cluster]
         if (state is not None):
 
-            best_action_value = -1000.0
+            best_action_value = -10000000.0
             best_action_id = None
 
             for edge_key, edge_info in state ['edges'].copy().items():
@@ -421,6 +507,7 @@ class AssociationsGraph ():
                     depth = 0.0
                     for i in range(num_of_samples):
                         sample_value, sample_depth = self.mc_graph_search_sample (next_state_id, search_depth)
+                        # print('--- sample: {} {}'.format(sample_value, sample_depth))
                         value += sample_value / float(num_of_samples)
                         depth += sample_depth / float(num_of_samples)
                     # print ('--- mcgs: a: {} v: {} ev: {} s: {} mcdsv: {} d: {}'.format(action_id, (edge_value + value), edge_value, next_state_id, value, depth))
@@ -442,6 +529,8 @@ class AssociationsGraph ():
         prev_state = self.state_nodes [initial_state_cluster]
         visited = {prev_state['id'] : True}
 
+        cur_step_gamma = 1.0
+
         if prev_state is None:
             return sample_value, current_depth
 
@@ -455,7 +544,7 @@ class AssociationsGraph ():
             # try to select next
             edge_value = 0
             edge_info = None
-            for i in range(10):
+            for i in range(20):
                 ei = random.randint(0, edges_count - 1)
                 edge_info = list(prev_state ['edges'].values())[ei]
                 if (edge_info ['added']):
@@ -471,8 +560,9 @@ class AssociationsGraph ():
                 if prev_state['id'] in visited:
                     return sample_value, current_depth
                 else:
-                    sample_value += edge_value
+                    sample_value += cur_step_gamma * edge_value
                     current_depth += 1
+                    cur_step_gamma *= self.gamma
 
             if current_depth == search_depth - 1:
                 return sample_value, current_depth

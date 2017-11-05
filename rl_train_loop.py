@@ -111,24 +111,37 @@ class RLTrainLoop ():
         # print (actions)
         # print (rewards)
         self.stored_count += len (rewards)
-        if self.stored_count < self.start_learning_after:
-            print ('stored exp: {}'.format(self.stored_count))
+        # if self.stored_count < self.start_learning_after:
+        #     print ('stored exp: {}'.format(self.stored_count))
+
+        self.store_index += 1
+        if self.store_index % 10000 == 0:
+            print('--- sum reward {}'.format(self.sum_rewards))
+            self.sum_rewards = 0.0
 
         # self.store_index += 1
         # if self.store_index % self.store_every_nth == 0:
-        self.store_outputs = self.sess.run ([
-            self.exp_enqueue_op,
-            self.inp_rewards,
-            self.inp_actions,
-            self.inp_prev_states,
-            self.inp_next_states
-            #self.exp_fifo_enqueue_op
-        ] + self.store_ops, {
-            self.inp_rewards: np.array(rewards),
-            self.inp_actions: np.array(actions),
-            self.inp_prev_states: np.array(prev_states),
-            self.inp_next_states: np.array(next_states)
-        })
+        # self.store_outputs = self.sess.run ([
+        #     self.exp_enqueue_op,
+        #     self.inp_rewards,
+        #     self.inp_actions,
+        #     self.inp_prev_states,
+        #     self.inp_next_states
+        #     #self.exp_fifo_enqueue_op
+        # ] + self.store_ops, {
+        #     self.inp_rewards: np.array(rewards),
+        #     self.inp_actions: np.array(actions),
+        #     self.inp_prev_states: np.array(prev_states),
+        #     self.inp_next_states: np.array(next_states)
+        # })
+        self.store_outputs = []
+        self.store_outputs.append([])
+        self.store_outputs.append(np.array(rewards))
+        self.store_outputs.append(np.array(actions))
+        self.store_outputs.append(np.array(prev_states))
+        self.store_outputs.append(np.array(next_states))
+
+        # print('--- rewards: {}'.format(rewards))
         self.sum_rewards += np.sum(rewards)
         if self.store_listener is not None:
             self.store_listener ()
