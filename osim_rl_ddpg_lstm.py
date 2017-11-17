@@ -8,6 +8,11 @@ from tf_rl.models import MLP
 
 from tf_rl.utils import base_name2
 
+#
+# Probably will not work
+# I left it here because it may be useful
+#
+
 class OsimRLLSTM ():
 
     def __init__ (self, train_loop):

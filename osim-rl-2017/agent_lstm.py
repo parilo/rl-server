@@ -6,6 +6,11 @@ import random
 from osim.env.run import RunEnv
 from rl_client import RLClient
 
+#
+# Probably will not work
+# I left it here because it may be useful
+#
+
 parser = argparse.ArgumentParser(description='Train or test neural net motor controller')
 parser.add_argument('--visualize', dest='visualize', action='store_true', default=False)
 args = parser.parse_args()

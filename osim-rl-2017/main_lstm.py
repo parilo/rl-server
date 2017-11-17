@@ -4,6 +4,11 @@ import subprocess
 import atexit
 import time
 
+#
+# Probably will not work
+# I left it here because it may be useful
+#
+
 ps = []
 
 for i in range (2):
