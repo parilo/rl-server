@@ -5,9 +5,18 @@
 import asyncio
 import websockets
 import json
-from quadrotor2d import Quadrotor2D
+from rl_train_loop import RLTrainLoop
+from quadrotor2d_ddpg import Quadrotor2D
 
-model = Quadrotor2D ()
+num_actions = 2;
+observation_size = 50;
+
+train_loop = RLTrainLoop (num_actions, observation_size)
+quadrotor2d = Quadrotor2D (train_loop)
+
+train_loop.set_loss_op (quadrotor2d.get_loss_op ())
+train_loop.add_train_ops (quadrotor2d.get_train_ops ())
+train_loop.init_vars ()
 
 async def agent_connection(websocket, path):
     while websocket.open:
@@ -17,13 +26,13 @@ async def agent_connection(websocket, path):
 
         method = req ['method']
         if method == 'act':
-            action = model.act (req ['state'])
+            action = quadrotor2d.act (req ['state'])
             await websocket.send(json.dumps(action))
         elif method == 'act_batch':
-            actions = model.act_batch (req ['states'])
+            actions = quadrotor2d.act_batch (req ['states'])
             await websocket.send(json.dumps(actions))
         elif method == 'store_exp_batch':
-            model.store_exp_batch (
+            train_loop.store_exp_batch (
                 req ['rewards'],
                 req ['actions'],
                 req ['prev_states'],
@@ -31,10 +40,10 @@ async def agent_connection(websocket, path):
             )
             await websocket.send('')
 
-model.train ()
+train_loop.train ()
 
 start_server = websockets.serve(agent_connection, 'localhost', 8765)
 
 asyncio.get_event_loop().run_until_complete(start_server)
 asyncio.get_event_loop().run_forever()
-model.join ()
+train_loop.join ()
