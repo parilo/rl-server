@@ -1,6 +1,7 @@
 # RL Server
 
 [![Quadrotor 2D RL video](http://img.youtube.com/vi/acQJfkgeiZc/0.jpg)](https://www.youtube.com/watch?v=acQJfkgeiZc)
+[![NIPS 2017 Learning To Run video](http://img.youtube.com/vi/OPfDrQbamT4/0.jpg)](https://www.youtube.com/watch?v=OPfDrQbamT4)
 
 Reinforcement Learning Server. Includes:
 
