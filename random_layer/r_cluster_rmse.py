@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import cv2
 
-class RCluster ():
+class RClusterRMSE ():
 
     def __init__ (
         self,
@@ -25,7 +25,9 @@ class RCluster ():
         self.scope = scope
         self.highlighted_vector = np.zeros((1, self.input_dim))
         self.centroids = None
-        self.change_size = 4
+        self.change_size = 500
+
+        self.input_stat = []
 
 
 
@@ -34,15 +36,15 @@ class RCluster ():
             n_initializer =  tf.random_uniform_initializer(0, 1)
             self.neurons = tf.get_variable('neurons', (self.clusters_count, self.input_dim), initializer=n_initializer)
 
-            init_limit_a = self.initial_mean - self.initial_std
+            init_limit_a = self.initial_mean - 3.0 * self.initial_std
             init_limit_a = np.repeat(init_limit_a.reshape(1, self.input_dim), self.clusters_count, axis=0)
-            init_limit_b = self.initial_mean + self.initial_std
+            init_limit_b = self.initial_mean + 3.0 * self.initial_std
             init_limit_b = np.repeat(init_limit_b.reshape(1, self.input_dim), self.clusters_count, axis=0)
 
             generated_neurons = tf.multiply(self.neurons, init_limit_b - init_limit_a) + init_limit_a
             self.init_neurons = tf.assign(
                 self.neurons,
-                tf.transpose(tf.divide(tf.transpose(generated_neurons), tf.norm(generated_neurons, axis=1)))
+                generated_neurons
             )
 
             # self.normalize_neurons = tf.assign(self.neurons, tf.div (self.neurons, tf.norm(self.neurons, ord='euclidean', axis=1)))
@@ -60,21 +62,26 @@ class RCluster ():
             neurons_tiled = tf.reshape(tf.tile(self.neurons, [batch_size, 1]), [batch_size, self.clusters_count, self.input_dim])
             diff = tf.subtract(input_tiled, neurons_tiled)
             self.batch_winners = tf.argmin(tf.reduce_sum(tf.multiply(diff, diff), axis=2), axis=1)
-            # self.batch_winners = tf.argmax(tf.tensordot(self.inp ut_batch, self.neurons, [[1], [1]]), 1)
+            # self.batch_winners = tf.argmax(tf.tensordot(self.input_batch, self.neurons, [[1], [1]]), 1)
 
             self.replace_from_index = tf.placeholder(tf.int32, (self.change_size))
             self.replace_to_index = tf.placeholder(tf.int32, (self.change_size))
             gathered = tf.gather(self.neurons, self.replace_from_index)
-            gathered = gathered + tf.random_uniform((self.change_size, self.input_dim), minval=-0.05, maxval=0.05) * np.repeat(self.initial_std.reshape(1, self.input_dim), self.change_size, axis=0)
-            # normalize gathered
-            gathered = tf.transpose(tf.divide(tf.transpose(gathered), tf.norm(gathered, axis=1)))
+            gathered = gathered + \
+                tf.random_normal((self.change_size, self.input_dim), stddev=0.1) * \
+                np.repeat(self.initial_std.reshape(1, self.input_dim), self.change_size, axis=0)
+                # tf.random_uniform((self.change_size, self.input_dim), minval=-1.0, maxval=1.0) * \
             self.update_neurons = tf.scatter_update(self.neurons, self.replace_to_index, gathered)
 
         self.updatable = False
+        self.adaptable = False
         self.reset_stat()
 
     def set_updatable(self, updatable):
         self.updatable = updatable
+
+    def set_adaptable(self, adaptable):
+        self.adaptable = adaptable
 
     def init(self):
         self.train_loop.sess.run(self.init_neurons)
@@ -112,7 +119,7 @@ class RCluster ():
             for c in clusters:
                 self.usage_stat [c] += 1
             self.usage_stat_iters += len(clusters)
-            if self.usage_stat_iters > 25000:
+            if (self.usage_stat_iters > 50000) and self.adaptable:
                 self.adapt_neurons()
                 self.reset_stat()
 
@@ -124,16 +131,32 @@ class RCluster ():
         max_usage = np.max(self.usage_stat)
         min_usage = np.min(self.usage_stat)
         none_zero_count = np.count_nonzero(self.usage_stat)
-        if none_zero_count < 70:
-            print('--- usage stat: min: {} max: {} non zero count: {}'.format(min_usage, max_usage, none_zero_count))
+        print('--- usage stat: min: {} max: {} non zero count: {}'.format(min_usage, max_usage, none_zero_count))
+        print('--- stat {}'.format(np.sort(self.usage_stat)))
+        if min_usage < 100:
+            print('--- adapting')
             # print(self.usage_stat.tolist())
             # stat = np.stack([range(self.clusters_count), self.usage_stat])
             # stat = np.sort(stat, axis=1)
             # print(np.argsort(self.usage_stat).tolist())
             # print(self.usage_stat.tolist())
+
+            # neurons = self.get_neurons()
+            # print('--- neurons before {}'.format())
+
             sorted_indices = np.argsort(self.usage_stat)
             less_used = sorted_indices[:self.change_size]
             more_used = sorted_indices[-self.change_size:]
+            # more_used = np.array([sorted_indices[-1]] * self.change_size)
+
+            print('--- more used {}'.format(more_used))
+            print('--- less used {}'.format(less_used))
+
+            # for i in more_used:
+            #     print('--- more used {}'.format(neurons[i]))
+            # for i in less_used:
+            #     print('--- less used {}'.format(neurons[i]))
+
             self.train_loop.sess.run(
                 self.update_neurons,
                 {
@@ -142,7 +165,21 @@ class RCluster ():
                 }
             )
 
+            # neurons = self.get_neurons()
+            # for i in more_used:
+            #     print('--- more used after {}'.format(neurons[i]))
+            # for i in less_used:
+            #     print('--- less used after {}'.format(neurons[i]))
+
     def get_clusters (self, vectors):
+
+        for v in vectors:
+            self.input_stat.append(v)
+            if len(self.input_stat) > 200000:
+                print('--- mean: {}'.format(np.mean(np.array(self.input_stat), axis=0)))
+                print('--- std:  {}'.format(np.std(np.array(self.input_stat), axis=0)))
+                self.input_stat = []
+
         clusters = self.train_loop.sess.run(self.batch_winners, {self.input_batch: vectors})
         self.update_stat(clusters)
         return clusters
