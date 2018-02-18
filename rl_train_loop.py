@@ -18,8 +18,9 @@ class RLTrainLoop ():
         self.sess = tf.Session(config=config)
         self.logger = tf.summary.FileWriter("logs")
 
-        self.batch_size = 128
-        self.max_experience_size = 400000
+        # self.batch_size = 128
+        self.batch_size = 64
+        self.max_experience_size = 1000000
         self.start_learning_after = 5000
         self.store_every_nth = 5
 
@@ -90,8 +91,8 @@ class RLTrainLoop ():
         self.train_listener = None
         self.store_listener = None
 
-        self.storing_count = 0
-        self.states_buffer = np.zeros((0, 50))
+        # self.storing_count = 0
+        # self.states_buffer = np.zeros((0, 50))
 
     def init_vars (self):
 
@@ -103,6 +104,21 @@ class RLTrainLoop ():
         # self.saver.restore(self.sess, "submissions/11/model-22000000.ckpt")
         # self.saver.restore(self.sess, "submissions/13/model-8000000.ckpt")
         # self.saver.restore(self.sess, "submissions/17/model-4400000.ckpt")
+        # self.saver.restore(self.sess, "submissions/19/model-1900000.ckpt")
+        # self.saver.restore(self.sess, "submissions/17/model-3400000.ckpt")
+        # self.saver.restore(self.sess, "submissions/20/model-970000.ckpt")
+        # self.saver.restore(self.sess, "submissions/22/model-4240000.ckpt")
+        # self.saver.restore(self.sess, "submissions/24/model-4850000.ckpt")
+
+        # self.saver.restore(self.sess, "submissions/25/model-1800000.ckpt")
+        # self.saver.restore(self.sess, "submissions/26/model-540000.ckpt")
+        # self.saver.restore(self.sess, "submissions/27/model-2070000.ckpt")
+        # self.saver.restore(self.sess, "submissions/28/model-1500000.ckpt")
+
+        # self.saver.restore(self.sess, "submissions/17/model-3400000.ckpt")
+        # self.saver.restore(self.sess, "submissions/30/model-3670000.ckpt")
+
+        self.saver.restore(self.sess, "submissions/23/model-650000.ckpt")
 
     def store_exp_batch (self, rewards, actions, prev_states, next_states):
         # print ('store')
@@ -176,7 +192,7 @@ class RLTrainLoop ():
         def TrainLoop(coord):
 
             try:
-                i = 0
+                i = self.start_learning_after
                 while not coord.should_stop():
 
                     if i > self.stored_count:
