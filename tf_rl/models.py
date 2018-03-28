@@ -47,11 +47,12 @@ class Layer(object):
             return Layer(self.input_sizes, self.output_size, scope=sc)
 
 class MLP(object):
-    def __init__(self, input_sizes, hiddens, nonlinearities, scope=None, given_layers=None):
+    def __init__(self, input_sizes, hiddens, nonlinearities, scope=None, given_layers=None, output_scale=1.0):
         self.input_sizes = input_sizes
         self.hiddens = hiddens
         self.input_nonlinearity, self.layer_nonlinearities = nonlinearities[0], nonlinearities[1:]
         self.scope = scope or "MLP"
+        self.output_scale = output_scale
 
         assert len(hiddens) == len(nonlinearities), \
                 "Number of hiddens must be equal to number of nonlinearities"
@@ -75,7 +76,7 @@ class MLP(object):
             for layer, nonlinearity in zip(self.layers, self.layer_nonlinearities):
                 hidden = nonlinearity(layer(hidden))
 #                hidden = tf.nn.dropout(nonlinearity(layer(hidden)), 0.5)
-            return hidden
+            return self.output_scale * hidden
 
     def variables(self):
         res = self.input_layer.variables()
@@ -88,13 +89,13 @@ class MLP(object):
         nonlinearities = [self.input_nonlinearity] + self.layer_nonlinearities
         given_layers = [self.input_layer.copy(scope+"_input_layer")] + [layer.copy(scope+"_layer_"+str(i)) for (i,layer) in enumerate(self.layers)]
         return MLP(self.input_sizes, self.hiddens, nonlinearities, scope=scope,
-                given_layers=given_layers)
+                given_layers=given_layers, output_scale=self.output_scale)
 
-    
+
 class SeparatedMLP(object):
     def __init__(self, mlps):
         self.mlps = mlps
-        
+
     def __call__(self, xs):
         res = []
         for mlp in self.mlps:
@@ -106,7 +107,7 @@ class SeparatedMLP(object):
         for mlp in self.mlps:
             res.extend (mlp.variables ())
         return res
-    
+
     def copy(self, scope=None):
         new_mlps = []
         for (i, mlp) in enumerate(self.mlps):

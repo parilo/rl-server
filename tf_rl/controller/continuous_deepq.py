@@ -199,9 +199,10 @@ class ContinuousDeepQ(object):
                 [-1]
             )
             # tf.scalar_summary("value_for_given_action", tf.reduce_mean(self.value_given_action))
-            temp_diff                       = self.value_given_action - self.future_reward
+            # temp_diff                       = self.value_given_action - self.future_reward
+            # self.critic_error               = tf.identity(tf.reduce_mean(tf.square(temp_diff)), name='critic_error')
 
-            self.critic_error               = tf.identity(tf.reduce_mean(tf.square(temp_diff)), name='critic_error')
+            self.critic_error               = tf.identity(tf.losses.huber_loss(self.value_given_action, self.future_reward), name='critic_error')
             ##### OPTIMIZATION #####
             critic_gradients                       = self.optimizer.compute_gradients(self.critic_error, var_list=self.critic.variables())
             # Add histograms for gradients.

@@ -18,8 +18,8 @@ class RLTrainLoop ():
         self.sess = tf.Session(config=config)
         self.logger = tf.summary.FileWriter("logs")
 
-        self.batch_size = 64
-        self.max_experience_size = 1000000
+        self.batch_size = 96
+        self.max_experience_size = 3000000
         self.start_learning_after = 5000
         self.store_every_nth = 5
 
@@ -27,27 +27,30 @@ class RLTrainLoop ():
         self.inp_actions = tf.placeholder (tf.float32, (None, num_actions))
         self.inp_prev_states = tf.placeholder (tf.float32, (None, observation_size))
         self.inp_next_states = tf.placeholder (tf.float32, (None, observation_size))
+        self.inp_not_terminator = tf.placeholder (tf.float32, (None,))
 
         all_experience = tf.RandomShuffleQueue (
             capacity=self.max_experience_size,
             min_after_dequeue=self.start_learning_after,
-            dtypes=[tf.float32, tf.float32, tf.float32, tf.float32],
+            dtypes=[tf.float32, tf.float32, tf.float32, tf.float32, tf.float32],
             shapes=[
                 (),
                 (num_actions,),
                 (observation_size,),
-                (observation_size,)
+                (observation_size,),
+                ()
             ]
         )
 
         exp_fifo_queue = tf.FIFOQueue (
             capacity=self.max_experience_size,
-            dtypes=[tf.float32, tf.float32, tf.float32, tf.float32],
+            dtypes=[tf.float32, tf.float32, tf.float32, tf.float32, tf.float32],
             shapes=[
                 (),
                 (num_actions,),
                 (observation_size,),
-                (observation_size,)
+                (observation_size,),
+                ()
             ]
         )
 
@@ -55,29 +58,33 @@ class RLTrainLoop ():
             self.inp_rewards,
             self.inp_actions,
             self.inp_prev_states,
-            self.inp_next_states
+            self.inp_next_states,
+            self.inp_not_terminator
         ])
 
         self.exp_fifo_enqueue_op = exp_fifo_queue.enqueue_many([
             self.inp_rewards,
             self.inp_actions,
             self.inp_prev_states,
-            self.inp_next_states
+            self.inp_next_states,
+            self.inp_not_terminator
         ])
 
         self.exp_size_op = all_experience.size ()
 
-        [rewards, actions, prev_states, next_states] = all_experience.dequeue_many (self.batch_size)
+        [rewards, actions, prev_states, next_states, not_terminator] = all_experience.dequeue_many (self.batch_size)
         self.dequeued_rewards = rewards
         self.dequeued_actions = actions
         self.dequeued_prev_states = prev_states
         self.dequeued_next_states = next_states
+        self.dequeued_not_terminator = not_terminator
 
-        [fifo_rewards, fifo_actions, fifo_prev_states, fifo_next_states] = exp_fifo_queue.dequeue_many (self.batch_size)
+        [fifo_rewards, fifo_actions, fifo_prev_states, fifo_next_states, fifo_not_terminator] = exp_fifo_queue.dequeue_many (self.batch_size)
         self.dequeued_fifo_rewards = fifo_rewards
         self.dequeued_fifo_actions = fifo_actions
         self.dequeued_fifo_prev_states = fifo_prev_states
         self.dequeued_fifo_next_states = fifo_next_states
+        self.dequeued_fifo_not_terminator = fifo_not_terminator
         self.exp_fifo_size_op = exp_fifo_queue.size ()
 
         self.sum_rewards = 0
@@ -96,7 +103,13 @@ class RLTrainLoop ():
         self.sess.run(tf.global_variables_initializer())
         self.saver = tf.train.Saver(max_to_keep=None)
 
-    def store_exp_batch (self, rewards, actions, prev_states, next_states):
+    def store_exp_batch (self, rewards, actions, prev_states, next_states, is_terminators):
+        is_terminators = np.array(is_terminators)
+        is_not_terminators = np.ones_like(is_terminators) - is_terminators
+        self.store_index += 1
+
+        # if self.store_index % 2 == 1:
+
         self.stored_count += len (rewards)
         if self.stored_count < self.start_learning_after:
             print ('stored exp: {}'.format(self.stored_count))
@@ -111,7 +124,8 @@ class RLTrainLoop ():
             self.inp_rewards: np.array(rewards),
             self.inp_actions: np.array(actions),
             self.inp_prev_states: np.array(prev_states),
-            self.inp_next_states: np.array(next_states)
+            self.inp_next_states: np.array(next_states),
+            self.inp_not_terminator: is_not_terminators
         })
         self.sum_rewards += np.sum(rewards)
         if self.store_listener is not None:
@@ -164,6 +178,7 @@ class RLTrainLoop ():
                         self.dequeued_actions,
                         self.dequeued_prev_states,
                         self.dequeued_next_states,
+                        self.dequeued_not_terminator,
                         self.exp_size_op,
                         self.loss_op
                     ] + self.train_ops)
@@ -172,8 +187,9 @@ class RLTrainLoop ():
                     a = self.train_outputs [1]
                     ps = self.train_outputs [2]
                     ns = self.train_outputs [3]
-                    queue_size = self.train_outputs [4]
-                    loss = self.train_outputs [5]
+                    nt = self.train_outputs [4]
+                    queue_size = self.train_outputs [5]
+                    loss = self.train_outputs [6]
 
                     if self.train_listener is not None:
                         self.train_listener ()
@@ -186,7 +202,8 @@ class RLTrainLoop ():
                             self.inp_rewards: r,
                             self.inp_actions: a,
                             self.inp_prev_states: ps,
-                            self.inp_next_states: ns
+                            self.inp_next_states: ns,
+                            self.inp_not_terminator: nt
                         })
 
                     if i % 2000 == 1999:
