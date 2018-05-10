@@ -4,7 +4,8 @@ import tensorflow as tf
 import threading
 
 from tf_rl.controller import CriticControl
-from tf_rl.models import MLP
+# from tf_rl.models import MLP
+from snake_model import SnakeModel
 
 class SnakeRL ():
 
@@ -34,8 +35,10 @@ class SnakeRL ():
         critic_input_shape = [input_size, num_actions]
         action_shape = [num_actions]
 
-        critic = MLP(critic_input_shape, [512, 512, 512, 512, 1],
-                    [r, r, r, r, tf.identity], scope='critic')
+        critic = SnakeModel(input_shapes=[[8, 8, 5], [num_actions]], output_size=1)
+
+        # critic = MLP(critic_input_shape, [512, 512, 512, 512, 1],
+        #             [r, r, r, r, tf.identity], scope='critic')
 
         # self.actor = MLP([input_size,], [512, 512, 512, 512, num_actions],
         #             [r, r, r, r, t], scope='actor')
@@ -66,17 +69,37 @@ class SnakeRL ():
             next_observation_mask = self.train_loop.dequeued_not_terminator
         )
 
+        self.act_count = 0
+
     def act (self, state):
-        a, q = self.sess.run (
-            [
-                self.controller.actor_val,
-                self.controller.value_given_action_for_act
-            ],
-            {
-                self.controller.observation_for_act: np.array(state).reshape((1,-1))
-            }
-        )
-        return a[0].tolist(), q[0].tolist()
+
+        if self.act_count < 500000:
+            a, q, t, _ = self.sess.run (
+                [
+                    self.controller.actor_val,
+                    self.controller.value_given_action_for_act,
+                    self.controller.t,
+                    self.controller.act_count_increase
+                ],
+                {
+                    self.controller.observation_for_act: np.array(state).reshape((1,-1))
+                }
+            )
+
+        else:
+            a, q, t = self.sess.run (
+                [
+                    self.controller.actor_val,
+                    self.controller.value_given_action_for_act,
+                    self.controller.t
+                ],
+                {
+                    self.controller.observation_for_act: np.array(state).reshape((1,-1))
+                }
+            )
+
+        self.act_count += 1
+        return a[0].tolist(), q[0].tolist(), t
 
     def act_batch (self, states):
         a = self.sess.run (

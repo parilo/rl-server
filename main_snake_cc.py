@@ -23,10 +23,11 @@ async def agent_connection(websocket, path):
 
         method = req ['method']
         if method == 'act':
-            action, qvalue = osim_rl.act (req ['state'])
+            action, qvalue, tvalue = osim_rl.act (req ['state'])
             await websocket.send(json.dumps({
                 "action" : action,
-                "qvalue" : qvalue
+                "qvalue" : qvalue,
+                "boltzmann_exploration_t" : [float(tvalue)]
             }))
         elif method == 'act_batch':
             actions = osim_rl.act_batch (req ['states'])

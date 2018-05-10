@@ -101,7 +101,7 @@ class CriticControl(object):
             target_network_update.append(update_op)
         return tf.group(*target_network_update)
 
-    def act(self, critic, observation, batch_size, proposals_count = 100):
+    def _get_action_values(self, critic, observation, batch_size, proposals_count = 100):
         num_actions = self.action_shape[0]
         observation_size = self.observation_shape[1]
         print('--- observation: {}'.format(observation))
@@ -117,6 +117,10 @@ class CriticControl(object):
             [batch_size, proposals_count, 1]
         )
         print('--- actions_values: {}'.format(actions_values))
+        return actions_values, actions_proposals
+
+    def act(self, critic, observation, batch_size, proposals_count = 100):
+        actions_values, actions_proposals = self._get_action_values(critic, observation, batch_size, proposals_count)
         max_value_index = tf.argmax(actions_values, axis=1, output_type=tf.int32)
         print('--- max_value_index: {}'.format(max_value_index))
 
@@ -133,25 +137,51 @@ class CriticControl(object):
         print('--- selected_action: {}'.format(selected_action))
         return selected_action
 
-    def mc_sum_over_actions(self, critic, observation, batch_size, proposals_count = 100):
-        num_actions = self.action_shape[0]
-        observation_size = self.observation_shape[1]
-        print('--- observation: {}'.format(observation))
-        actions_proposals_shape = [batch_size, proposals_count, num_actions]
-        actions_proposals = tf.random_uniform(actions_proposals_shape, minval=-1.0, maxval=1.0)
-        print('--- actions_proposals: {}'.format(actions_proposals))
-        observations_for_proposals = tf.tile(tf.expand_dims(observation, 1), [1, proposals_count, 1])
-        print('--- observations_for_proposals: {}'.format(observations_for_proposals))
-        actions_values = tf.reshape(
-            critic([
-                tf.reshape(observations_for_proposals, [-1, observation_size]),
-                tf.reshape(actions_proposals, [-1, num_actions])]),
-            [batch_size, proposals_count, 1]
+    def act_boltzmann_exploration(self, critic, observation, batch_size, proposals_count = 100):
+
+        act_count = tf.Variable(0, trainable=False, dtype=tf.int64)
+        act_count_increase = tf.assign(act_count, act_count + 1)
+        self.t = 1.0 - (1.0 - 0.01) / 500000.0 * tf.cast(act_count, tf.float32)
+
+        actions_values, actions_proposals = self._get_action_values(critic, observation, batch_size, proposals_count)
+        actions_values_logits = tf.reshape(actions_values, [1, -1]) / self.t
+        print('--- actions_values_logits {}'.format(actions_values_logits))
+        sampled_action = tf.cast(tf.multinomial(logits=actions_values_logits, num_samples=1), tf.int32)
+        print('--- samples action {}'.format(sampled_action))
+
+        indices = tf.concat(
+            [
+                tf.reshape(tf.range(0, batch_size), [batch_size, 1]),
+                sampled_action
+            ],
+            axis=1
         )
-        print('--- actions_values: {}'.format(actions_values))
-        sum_over_actions = tf.reduce_mean(actions_values, axis=1)
-        print('--- sum_over_actions: {}'.format(sum_over_actions))
-        return sum_over_actions
+        print('--- indices: {}'.format(indices))
+
+        selected_action = tf.gather_nd(actions_proposals, indices)
+        print('--- selected_action: {}'.format(selected_action))
+        return selected_action, act_count_increase
+
+
+    # def mc_sum_over_actions(self, critic, observation, batch_size, proposals_count = 100):
+    #     num_actions = self.action_shape[0]
+    #     observation_size = self.observation_shape[1]
+    #     print('--- observation: {}'.format(observation))
+    #     actions_proposals_shape = [batch_size, proposals_count, num_actions]
+    #     actions_proposals = tf.random_uniform(actions_proposals_shape, minval=-1.0, maxval=1.0)
+    #     print('--- actions_proposals: {}'.format(actions_proposals))
+    #     observations_for_proposals = tf.tile(tf.expand_dims(observation, 1), [1, proposals_count, 1])
+    #     print('--- observations_for_proposals: {}'.format(observations_for_proposals))
+    #     actions_values = tf.reshape(
+    #         critic([
+    #             tf.reshape(observations_for_proposals, [-1, observation_size]),
+    #             tf.reshape(actions_proposals, [-1, num_actions])]),
+    #         [batch_size, proposals_count, 1]
+    #     )
+    #     print('--- actions_values: {}'.format(actions_values))
+    #     sum_over_actions = tf.reduce_mean(actions_values, axis=1)
+    #     print('--- sum_over_actions: {}'.format(sum_over_actions))
+    #     return sum_over_actions
 
     def mc_max_over_actions(self, critic, observation, batch_size, proposals_count = 100):
         num_actions = self.action_shape[0]
@@ -191,7 +221,10 @@ class CriticControl(object):
 
         # FOR REGULAR ACTION SCORE COMPUTATION
         with tf.name_scope("taking_action"):
-            self.actor_val = self.act(self.critic, self.observation_for_act, 1)
+            self.actor_val, self.act_count_increase = self.act_boltzmann_exploration(self.critic, self.observation_for_act, 1)
+            print('                           ')
+            # self.act_boltzmann_exploration(self.critic, self.observation_for_act, 1)
+            # print('                           ')
 
 #             # self.observation  = tf.placeholder(tf.float32, (None, self.observation_size), name="observation")
 # #            self.actor_val = tf.nn.sigmoid(self.actor(self.observation)) * 40 - 20;
