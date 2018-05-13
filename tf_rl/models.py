@@ -71,6 +71,8 @@ class MLP(object):
     def __call__(self, xs):
         if type(xs) != list:
             xs = [xs]
+        else:
+            xs = [xs[0][0], xs[1]]
         with tf.variable_scope(self.scope):
             hidden = self.input_nonlinearity(self.input_layer(xs))
             for layer, nonlinearity in zip(self.layers, self.layer_nonlinearities):

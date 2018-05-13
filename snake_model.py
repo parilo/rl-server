@@ -72,7 +72,7 @@ class SnakeModel(object):
 
         if isinstance(xs[0], (list, tuple)):
             print('--- call 1: {}'.format(xs))
-            return self._model([xs[0][0], xs[0][1], xs[0][2], xs[1]])
+            return self._model([xs[0][0], xs[1]])
         else:
             print('--- call 2: {}'.format(xs))
             return self._model(xs)

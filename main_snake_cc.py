@@ -7,13 +7,14 @@ from rl_train_loop import RLTrainLoop
 from snake_cc import SnakeRL
 
 num_actions = 3
-observation_size = 1 * 5 * 8 * 8
+# observation_shapes = [[8, 8, 5]]
+observation_shapes = [[8 * 8 * 5]]
 
-train_loop = RLTrainLoop (num_actions, observation_size)
-osim_rl = SnakeRL (train_loop)
+train_loop = RLTrainLoop (num_actions, observation_shapes)
+algorithm = SnakeRL (train_loop)
 
-train_loop.set_loss_op (osim_rl.get_loss_op ())
-train_loop.add_train_ops (osim_rl.get_train_ops ())
+train_loop.set_loss_op (algorithm.get_loss_op ())
+train_loop.add_train_ops (algorithm.get_train_ops ())
 train_loop.init_vars ()
 
 async def agent_connection(websocket, path):
@@ -23,14 +24,14 @@ async def agent_connection(websocket, path):
 
         method = req ['method']
         if method == 'act':
-            action, qvalue, tvalue = osim_rl.act (req ['state'])
+            action, qvalue, tvalue = algorithm.act (req ['state'])
             await websocket.send(json.dumps({
                 "action" : action,
                 "qvalue" : qvalue,
                 "boltzmann_exploration_t" : [float(tvalue)]
             }))
         elif method == 'act_batch':
-            actions = osim_rl.act_batch (req ['states'])
+            actions = algorithm.act_batch (req ['states'])
             await websocket.send(json.dumps(actions))
         elif method == 'store_exp_batch':
             train_loop.store_exp_batch (

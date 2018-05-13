@@ -4,8 +4,8 @@ import tensorflow as tf
 import threading
 
 from tf_rl.controller import CriticControl
-# from tf_rl.models import MLP
-from snake_model import SnakeModel
+from tf_rl.models import MLP
+# from snake_model import SnakeModel
 
 class SnakeRL ():
 
@@ -14,44 +14,46 @@ class SnakeRL ():
         self.train_loop = train_loop
         self.graph = train_loop.graph
         self.sess = train_loop.sess
-        # journalist = train_loop.logger
 
-        num_actions = self.train_loop.num_actions;
-        observation_size = self.train_loop.observation_size;
-        observations_in_seq = 1;
-        input_size = observation_size*observations_in_seq;
+        num_actions = self.train_loop.num_actions
+        num_agents_per_client = 1
+        observation_shapes = self.train_loop.observation_shapes
+        # observations_in_seq = 1;
+        # input_size = observation_size*observations_in_seq;
         learning_rate = 1e-4
+
+        observation_for_act_shapes = []
+        for shape in train_loop.observation_shapes:
+            observation_for_act_shapes.append(
+                tuple([num_agents_per_client] + list(shape))
+            )
+
+        action_shape = [num_actions]
+        critic_input_shapes = list(observation_shapes)
+        critic_input_shapes.append(action_shape)
+
 
         r = tf.nn.relu
         t = tf.nn.tanh
-
-        # critic = MLP([input_size, num_actions], [256, 256, 256, 256, 256, 1],
-        #             [r, r, r, t, t, tf.identity], scope='critic')
-        #
-        # self.actor = MLP([input_size,], [256, 256, 256, 256, 256, num_actions],
-        #             [r, r, r, r, t, t], scope='actor')
-
-        observation_shape = [None, observation_size]
-        critic_input_shape = [input_size, num_actions]
-        action_shape = [num_actions]
-
-        critic = SnakeModel(input_shapes=[[8, 8, 5], [num_actions]], output_size=1)
-
-        # critic = MLP(critic_input_shape, [512, 512, 512, 512, 1],
+        critic = MLP([observation_shapes[0][0], num_actions], [256, 256, 256, 256, 256, 1],
+                    [r, r, r, t, t, tf.identity], scope='critic')
+        # critic = MLP([observation_shapes[0][0], num_actions], [512, 512, 512, 512, 1],
         #             [r, r, r, r, tf.identity], scope='critic')
 
-        # self.actor = MLP([input_size,], [512, 512, 512, 512, num_actions],
-        #             [r, r, r, r, t], scope='actor')
+        # critic = SnakeModel(input_shapes=critic_input_shapes, output_size=1)
 
-        # step 1
+
+        for v in critic.variables():
+            print('--- critic v: {}'.format(v.name))
+
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)#, epsilon=1e-4)
-        # step 2
-        # optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
 
-        self.observation_for_act = tf.placeholder (tf.float32, (1, observation_size))
+        self.observation_for_act = [
+            tf.placeholder (tf.float32, observation_for_act_shapes[0])
+        ]
 
         self.controller = CriticControl(
-            observation_shape = observation_shape,
+            observation_shape = train_loop.observation_shapes,
             action_shape = action_shape,
             batch_size = train_loop.batch_size,
             # self.actor,
@@ -73,30 +75,29 @@ class SnakeRL ():
 
     def act (self, state):
 
-        if self.act_count < 500000:
-            a, q, t, _ = self.sess.run (
-                [
-                    self.controller.actor_val,
-                    self.controller.value_given_action_for_act,
-                    self.controller.t,
-                    self.controller.act_count_increase
-                ],
-                {
-                    self.controller.observation_for_act: np.array(state).reshape((1,-1))
-                }
-            )
-
-        else:
-            a, q, t = self.sess.run (
-                [
-                    self.controller.actor_val,
-                    self.controller.value_given_action_for_act,
-                    self.controller.t
-                ],
-                {
-                    self.controller.observation_for_act: np.array(state).reshape((1,-1))
-                }
-            )
+        # if self.act_count < 500000:
+        #     a, q, t = self.sess.run (
+        #         [
+        #             self.controller.actor_val,
+        #             self.controller.value_given_action_for_act,
+        #             self.controller.t
+        #         ],
+        #         {
+        #             self.controller.observation_for_act: np.array(state)
+        #         }
+        #     )
+        #
+        # else:
+        a, q, t = self.sess.run (
+            [
+                self.controller.actor_val,
+                self.controller.value_given_action_for_act,
+                self.controller.t
+            ],
+            {
+                self.controller.observation_for_act[0]: np.expand_dims(np.array(state), 0)
+            }
+        )
 
         self.act_count += 1
         return a[0].tolist(), q[0].tolist(), t
