@@ -94,11 +94,11 @@ class DiscreteDeepQ(object):
         observation_size : int
             длина вектора входных данных (этот вектор
             будем называть наблюдением или состоянием)
-            
+
         num_actions : int
             количество возможных действий или же
             длина вектора выходных данных нейросети
-            
+
         observation_to_actions: dali model
             модель (в нашем случае нейросеть),
             которая принимает наблюдение или набор наблюдений
@@ -106,38 +106,38 @@ class DiscreteDeepQ(object):
             набор оценок для каждого действия каждого из наблюдений
             входной размер: матрица [batch_size, observation_size]
             выходной размер: матрица [batch_size, num_actions]
-            
+
         optimizer: tf.solver.*
             алгоритм рассчета обратого распространения ошибки
             в нашем случае будет использоваться RMSProp
-            
+
         session: tf.Session
             сессия TensorFlow в которой будут производится вычисления
-            
+
         random_action_probability: float (0 to 1)
             вероятность случайного действия,
             для обогощения опыта нейросети и улучшения качесва управления
             с определенной вероятностью выполняется случайное действие, а не
             действие выданное нейросетью
-            
+
         exploration_period: int
             период поискового поведения в итерациях,
             в течении которого вероятность выполнения случайного
             действия падает от 1 до random_action_probability
-            
+
         store_every_nth: int
             параметр нужен чтобы сохранять не все обучающие примеры
             а только определенную часть из них.
             Сохранение происходит один раз в указаное в параметре
             количество обучающих примеров
-            
+
         train_every_nth: int
             обычно training_step (шаг обучения)
             запускается после каждого действия.
             Иногда получается так, что это слишком часто.
             Эта переменная указывает сколько шагов
             пропустить перед тем как запускать шаг обучения
-            
+
         minibatch_size: int
             размер набора обучающих примеров который
             используется на одном шаге обучения
@@ -145,16 +145,16 @@ class DiscreteDeepQ(object):
             Обучающий пример включает в себя
             состояние, предпринятое действие, награду и
             новое состояние
-            
+
         dicount_rate: float (0 to 1)
             параметр Q-learning
             насколько сильно влияет будущая награда при
             расчете пользы действия
-            
+
         max_experience: int
             максимальное количество сохраненных
             обучающих примеров
-            
+
         target_network_update_rate: float
             параметр скорости обучения нейросети,
             здесь используется 2 нейросети
@@ -169,12 +169,12 @@ class DiscreteDeepQ(object):
             Т модифицируется следующим образом:
                 alpha = target_network_update_rate
                 T = (1-alpha)*T + alpha*N
-                
+
         summary_writer: tf.train.SummaryWriter
             запись логов
         """
-        
-        
+
+
         # memorize arguments
         self.observation_size          = observation_size
         self.num_actions               = num_actions
@@ -252,7 +252,7 @@ class DiscreteDeepQ(object):
             #self.future_rewards            = self.rewards + self.discount_rate * target_values
             self.future_rewards            = tf.identity(self.rewards + self.discount_rate * target_values, name="future_rewards")
 
-        # обученте сети N 
+        # обученте сети N
         with tf.name_scope("q_value_precition"):
             # FOR PREDICTION ERROR
             # входной параметр маски действий в наборе обучающих примеров
@@ -293,7 +293,7 @@ class DiscreteDeepQ(object):
                 self.target_network_update.append(update_op)
             self.target_network_update = tf.group(*self.target_network_update, name="target_network_update")
 
-        # summaries 
+        # summaries
         tf.scalar_summary("prediction_error", self.prediction_error)
 
         self.summarize = tf.merge_all_summaries()
